@@ -1343,7 +1343,7 @@ body.jrs-bg-on.od-glass .od-launch-item {
 
 /* ---------- v0.2.1：背景模式下加强可读性 ---------- */
 body.jrs-bg-on.od-glass .od-card {
-  background: color-mix(in srgb, var(--background-secondary) 64%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
 }
 
 body.jrs-bg-on .od-hint,
