@@ -2229,6 +2229,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(VIEW_DASHBOARD);
     this.app.workspace.detachLeavesOfType(VIEW_LIBRARY);
     document.body.removeClass('od-glass', 'jrs-bg-on');
+    /* 清理注入到 body 的内联样式变量 */
+    ['--od-accent', '--od-accent-soft', '--od-blur', '--od-card-alpha',
+      '--od-radius-l', '--od-radius-m', '--od-gap', '--od-bg-dim',
+      '--jrs-bg', '--jrs-bg-image'].forEach((k) => document.body.style.removeProperty(k));
   }
 
   async gotoSection(id) {
