@@ -2156,3 +2156,22 @@ body.jrs-bg-on .jrs-section-heading h2 {
 .od-progress-tools .od-icon-btn { padding: 3px; }
 .od-progress-tools .od-icon-btn svg { width: 13px; height: 13px; }
 .od-progress-tools .od-icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ---------- v0.8.2：期刊分区徽章 ---------- */
+.jrs-journal-zone { font-size: 9.5px; letter-spacing: 0.02em; }
+
+/* ---------- 分区徽章 ---------- */
+.jrs-zone-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.jrs-zone-badge[data-zone="top"] { color: var(--od-danger); background: color-mix(in srgb, var(--od-danger) 10%, transparent); }
+.jrs-zone-badge[data-zone="mid"] { color: var(--od-accent); background: var(--od-accent-soft); }
+.jrs-zone-badge[data-zone="cn"] { color: var(--od-warn); background: color-mix(in srgb, var(--od-warn) 10%, transparent); }

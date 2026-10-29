@@ -56,21 +56,21 @@ const SECTIONS = [
 
 /** 目标期刊库（EJOR 等运筹学顶刊 + 航天/卫星领域核心刊） */
 const JOURNALS = [
-  { abbr: 'EJOR', name: 'European Journal of Operational Research', field: '运筹学', tag: '顶刊', publisher: 'Elsevier', match: '调度/优化方法+充分实验', link: 'https://www.editorialmanager.com/ejor/', note: '偏方法严谨与计算实验，规划类综述与方法文均常见' },
-  { abbr: 'OR', name: 'Operations Research', field: '运筹学', tag: '顶刊', publisher: 'INFORMS', match: '理论深度/算法贡献', link: 'https://pubsonline.informs.org/journal/opre', note: 'INFORMS 旗舰，理论要求高' },
-  { abbr: 'INFORMS JoC', name: 'INFORMS Journal on Computing', field: '运筹/计算', tag: '顶刊', publisher: 'INFORMS', match: '元启发式/进化算法/学习+优化', link: 'https://pubsonline.informs.org/journal/ijoc', note: '算法与计算实验导向，适合智能调度算法' },
-  { abbr: 'C&OR', name: 'Computers & Operations Research', field: '运筹/计算', tag: '主流', publisher: 'Elsevier', match: '调度算法/组合优化应用', link: 'https://www.editorialmanager.com/caor/', note: '应用型算法文友好' },
-  { abbr: 'Omega', name: 'Omega - The International Journal of Management Science', field: '运筹/管理', tag: '顶刊', publisher: 'Elsevier', match: '决策支持/应用驱动', link: 'https://www.editorialmanager.com/omega/', note: '强调应用价值与管理洞察' },
-  { abbr: 'Networks', name: 'Networks', field: '图论/网络', tag: '主流', publisher: 'Wiley', match: '网络流/图模型', link: 'https://onlinelibrary.wiley.com/journal/10970037', note: '网络结构建模对口' },
-  { abbr: 'AST', name: 'Aerospace Science and Technology', field: '航空航天', tag: '顶刊', publisher: 'Elsevier', match: '卫星任务规划/星座调度', link: 'https://www.editorialmanager.com/aescte/', note: '航天技术与系统，卫星规划高频期刊' },
-  { abbr: 'AA', name: 'Acta Astronautica', field: '航天', tag: '顶刊', publisher: 'Elsevier', match: '任务规划/在轨系统', link: 'https://www.editorialmanager.com/actaastro/', note: 'IAA 期刊，航天任务与系统工程' },
-  { abbr: 'ASR', name: 'Advances in Space Research', field: '航天', tag: '主流', publisher: 'Elsevier', match: '对地观测/星座应用', link: 'https://www.editorialmanager.com/asesre/', note: 'COSPAR 期刊，观测任务方向' },
-  { abbr: 'IEEE TAES', name: 'IEEE Trans. Aerospace and Electronic Systems', field: '航空电子', tag: '顶刊', publisher: 'IEEE', match: '调度系统/探测系统', link: 'https://ieee.atyponrex.com/journal/taes', note: '电子系统+任务规划结合' },
-  { abbr: 'IEEE TSMC', name: 'IEEE Trans. Systems, Man, and Cybernetics: Systems', field: '系统工程', tag: '顶刊', publisher: 'IEEE', match: '智能调度系统', link: 'https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=6221021', note: '系统智能方法' },
-  { abbr: 'JAIS', name: 'Journal of Aerospace Information Systems', field: '航天信息', tag: '主流', publisher: 'AIAA', match: '规划信息系统', link: 'https://arc.aiaa.org/journal/jais', note: 'AIAA 信息系系统方向' },
-  { abbr: '宇航学报', name: '宇航学报', field: '航天(中文)', tag: 'EI/中文核心', publisher: '中国宇航学会', match: '卫星任务规划主阵地', link: '', note: '国内卫星规划领域核心发表阵地' },
-  { abbr: '航空学报', name: '航空学报', field: '航空(中文)', tag: 'EI/中文核心', publisher: '中国航空学会', match: '飞行器/任务系统', link: '', note: '国内航空领域旗舰' },
-  { abbr: '系统工程与电子技术', name: '系统工程与电子技术', field: '系统工程(中文)', tag: 'EI/中文核心', publisher: '中国航天科工', match: '调度/优化应用', link: '', note: '系统工程应用，周期较快' },
+  { abbr: 'EJOR', name: 'European Journal of Operational Research', field: '运筹学', tag: '顶刊', publisher: 'Elsevier', match: '调度/优化方法+充分实验', link: 'https://www.editorialmanager.com/ejor/', note: '偏方法严谨与计算实验，规划类综述与方法文均常见', cas: '1区', jcr: 'Q1' },
+  { abbr: 'OR', name: 'Operations Research', field: '运筹学', tag: '顶刊', publisher: 'INFORMS', match: '理论深度/算法贡献', link: 'https://pubsonline.informs.org/journal/opre', note: 'INFORMS 旗舰，理论要求高', cas: '2区', jcr: 'Q1' },
+  { abbr: 'INFORMS JoC', name: 'INFORMS Journal on Computing', field: '运筹/计算', tag: '顶刊', publisher: 'INFORMS', match: '元启发式/进化算法/学习+优化', link: 'https://pubsonline.informs.org/journal/ijoc', note: '算法与计算实验导向，适合智能调度算法', cas: '2区', jcr: 'Q1' },
+  { abbr: 'C&OR', name: 'Computers & Operations Research', field: '运筹/计算', tag: '主流', publisher: 'Elsevier', match: '调度算法/组合优化应用', link: 'https://www.editorialmanager.com/caor/', note: '应用型算法文友好', cas: '2区', jcr: 'Q1' },
+  { abbr: 'Omega', name: 'Omega - The International Journal of Management Science', field: '运筹/管理', tag: '顶刊', publisher: 'Elsevier', match: '决策支持/应用驱动', link: 'https://www.editorialmanager.com/omega/', note: '强调应用价值与管理洞察', cas: '1区', jcr: 'Q1' },
+  { abbr: 'Networks', name: 'Networks', field: '图论/网络', tag: '主流', publisher: 'Wiley', match: '网络流/图模型', link: 'https://onlinelibrary.wiley.com/journal/10970037', note: '网络结构建模对口', cas: '3区', jcr: 'Q2' },
+  { abbr: 'AST', name: 'Aerospace Science and Technology', field: '航空航天', tag: '顶刊', publisher: 'Elsevier', match: '卫星任务规划/星座调度', link: 'https://www.editorialmanager.com/aescte/', note: '航天技术与系统，卫星规划高频期刊', cas: '1区', jcr: 'Q1' },
+  { abbr: 'AA', name: 'Acta Astronautica', field: '航天', tag: '顶刊', publisher: 'Elsevier', match: '任务规划/在轨系统', link: 'https://www.editorialmanager.com/actaastro/', note: 'IAA 期刊，航天任务与系统工程', cas: '2区', jcr: 'Q1' },
+  { abbr: 'ASR', name: 'Advances in Space Research', field: '航天', tag: '主流', publisher: 'Elsevier', match: '对地观测/星座应用', link: 'https://www.editorialmanager.com/asesre/', note: 'COSPAR 期刊，观测任务方向', cas: '3区', jcr: 'Q2' },
+  { abbr: 'IEEE TAES', name: 'IEEE Trans. Aerospace and Electronic Systems', field: '航空电子', tag: '顶刊', publisher: 'IEEE', match: '调度系统/探测系统', link: 'https://ieee.atyponrex.com/journal/taes', note: '电子系统+任务规划结合', cas: '2区', jcr: 'Q1' },
+  { abbr: 'IEEE TSMC', name: 'IEEE Trans. Systems, Man, and Cybernetics: Systems', field: '系统工程', tag: '顶刊', publisher: 'IEEE', match: '智能调度系统', link: 'https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=6221021', note: '系统智能方法', cas: '1区', jcr: 'Q1' },
+  { abbr: 'JAIS', name: 'Journal of Aerospace Information Systems', field: '航天信息', tag: '主流', publisher: 'AIAA', match: '规划信息系统', link: 'https://arc.aiaa.org/journal/jais', note: 'AIAA 信息系系统方向', cas: '3区', jcr: 'Q2' },
+  { abbr: '宇航学报', name: '宇航学报', field: '航天(中文)', tag: 'EI/中文核心', publisher: '中国宇航学会', match: '卫星任务规划主阵地', link: '', note: '国内卫星规划领域核心发表阵地', cas: 'EI', jcr: '' },
+  { abbr: '航空学报', name: '航空学报', field: '航空(中文)', tag: 'EI/中文核心', publisher: '中国航空学会', match: '飞行器/任务系统', link: '', note: '国内航空领域旗舰', cas: 'EI', jcr: '' },
+  { abbr: '系统工程与电子技术', name: '系统工程与电子技术', field: '系统工程(中文)', tag: 'EI/中文核心', publisher: '中国航天科工', match: '调度/优化应用', link: '', note: '系统工程应用，周期较快', cas: 'EI', jcr: '' },
 ];
 
 const SUB_STATUSES = ['写作中', '准备投稿', '已投', '审稿中', '大修', '小修', '已接收', '已拒稿', '改投'];
@@ -1013,37 +1013,55 @@ class DashboardView extends ItemView {
   /* ========== 区段：AI 发现 ========== */
 
   renderDiscover(page) {
+    if (!this._discoverSrc) this._discoverSrc = 'arxiv';
     const intro = page.createEl('section', { cls: 'jrs-card' });
     const head = intro.createEl('div', { cls: 'jrs-section-heading' });
-    head.createEl('h2', { text: 'arXiv 检索' });
-    head.createSpan({ text: '输入关键词，抓取最新论文，一键加入文献库' });
+    head.createEl('h2', { text: '论文检索' });
+    head.createSpan({ text: 'arXiv 预印本 + Crossref 正式期刊（自动标注中科院分区，参考值）' });
+    /* 源切换 */
+    const srcRow = intro.createEl('div', { cls: 'od-filters' });
+    const mkSrc = (id, label) => {
+      const c = srcRow.createEl('button', { cls: `od-filter${this._discoverSrc === id ? ' is-active' : ''}`, text: label });
+      c.onclick = () => { this._discoverSrc = id; this.render(); };
+      return c;
+    };
+    mkSrc('arxiv', 'arXiv 预印本');
+    mkSrc('crossref', 'Crossref 期刊');
     const form = intro.createEl('div', { cls: 'jrs-discover-form' });
     const input = form.createEl('input', {
       type: 'text',
-      placeholder: '如 all:"satellite scheduling" OR all:"earth observation"',
+      placeholder: this._discoverSrc === 'arxiv'
+        ? '如 all:"satellite scheduling" OR all:"earth observation"'
+        : '如 satellite scheduling grid / 敏捷卫星 调度（英文效果最佳）',
     });
-    input.value = this.plugin.settings.arxivQuery;
+    if (this._discoverSrc === 'arxiv') input.value = this.plugin.settings.arxivQuery;
     const num = form.createEl('input', { type: 'number', attr: { min: '3', max: '20' } });
     num.value = String(this.plugin.settings.arxivMax);
     const btn = form.createEl('button', { cls: 'od-btn od-btn--primary', text: '检索' });
     const host = page.createEl('div', { cls: 'jrs-discover-results' });
     const renderResults = (items) => {
       host.empty();
-      if (!items.length) { host.createEl('div', { cls: 'od-task-empty', text: '没有结果，换个关键词试试' }); return; }
+      if (!items || !items.length) { host.createEl('div', { cls: 'od-task-empty', text: '没有结果，换个关键词试试' }); return; }
       items.forEach((it) => {
         const card = host.createEl('article', { cls: 'jrs-card jrs-paper-row' });
         const main = card.createEl('div', { cls: 'jrs-row-main' });
         const t = main.createEl('div', { cls: 'jrs-row-title', text: it.title });
-        t.onclick = () => window.open(it.url);
-        main.createEl('div', { cls: 'od-hint', text: `${it.date} · ${it.authors}` });
+        if (it.url) t.onclick = () => window.open(it.url);
+        const metaLine = main.createEl('div', { cls: 'od-hint' });
+        const zone = this.plugin.zoneOf(it.venue);
+        metaLine.textContent = [it.date, it.venue, it.authors].filter(Boolean).join(' · ');
+        if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) main.appendChild(zb); }
         if (it.summary) main.createEl('div', { cls: 'jrs-row-summary', text: it.summary.slice(0, 160) + '…' });
         const acts = card.createEl('div', { cls: 'jrs-row-actions' });
         const add = acts.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '＋ 入库' });
         add.onclick = async () => {
           add.disabled = true;
-          await this.plugin.arxivToLibrary(it);
-          new Notice('已加入文献库 📚');
-          add.textContent = '已入库';
+          try {
+            if (it.source === 'crossref') await this.plugin.crossrefToLibrary(it);
+            else await this.plugin.arxivToLibrary(it);
+            new Notice('已加入文献库 📚');
+            add.textContent = '已入库';
+          } catch (e) { new Notice(`入库失败：${e.message}`); add.disabled = false; }
         };
       });
     };
@@ -1052,18 +1070,27 @@ class DashboardView extends ItemView {
       btn.textContent = '检索中…';
       try {
         const q = input.value.trim();
-        if (q) { this.plugin.settings.arxivQuery = q; await this.plugin.saveSettings(); }
         const n = Math.min(20, Math.max(3, parseInt(num.value, 10) || 8));
-        this.plugin.settings.arxivMax = n;
-        const r = await this.plugin.fetchArxiv(true);
-        renderResults(r.items.slice(0, n));
+        if (this._discoverSrc === 'arxiv') {
+          if (q) { this.plugin.settings.arxivQuery = q; await this.plugin.saveSettings(); }
+          this.plugin.settings.arxivMax = n;
+          const r = await this.plugin.fetchArxiv(true);
+          renderResults(r.items.slice(0, n));
+        } else {
+          const items = await this.plugin.searchCrossref(q, n);
+          renderResults(items);
+        }
       } catch (e) { new Notice(`检索失败：${e.message}`); }
       btn.disabled = false;
       btn.textContent = '检索';
     };
-    const cache = this.plugin.settings.arxivCache;
-    if (cache?.items?.length) renderResults(cache.items.slice(0, this.plugin.settings.arxivMax));
-    else host.createEl('div', { cls: 'od-task-empty', text: '输入关键词点「检索」，或点右上「立即发现」' });
+    if (this._discoverSrc === 'arxiv') {
+      const cache = this.plugin.settings.arxivCache;
+      if (cache?.items?.length) renderResults(cache.items.slice(0, this.plugin.settings.arxivMax));
+      else host.createEl('div', { cls: 'od-task-empty', text: '输入关键词点「检索」' });
+    } else {
+      host.createEl('div', { cls: 'od-task-empty', text: '输入英文关键词检索正式期刊论文（EJOR/AST 等），结果自动标注分区' });
+    }
   }
 
   /* ========== 区段：阅读队列 ========== */
@@ -1092,7 +1119,9 @@ class DashboardView extends ItemView {
     const title = main.createEl('div', { cls: 'jrs-row-title', text: p.title });
     title.onclick = () => this.plugin.openReading(p);
     const meta = main.createEl('div', { cls: 'od-hint' });
+    const zone = this.plugin.zoneOf(p.venue);
     meta.textContent = [p.year, p.venue, p.authorsShort].filter(Boolean).join(' · ') || '—';
+    if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) main.appendChild(zb); }
     /* 进度条 + 快进按钮 */
     const prog = main.createEl('div', { cls: 'jrs-progress' });
     const bar = prog.createEl('div', { cls: 'od-progressbar' });
@@ -1274,7 +1303,7 @@ class DashboardView extends ItemView {
     const jcard = page.createEl('section', { cls: 'jrs-card' });
     head = jcard.createEl('div', { cls: 'jrs-section-heading' });
     head.createEl('h2', { text: '目标期刊速查' });
-    head.createSpan({ text: 'EJOR 等运筹顶刊与航天/卫星核心刊 · 投稿链接与定位' });
+    head.createSpan({ text: 'EJOR 等运算顶刊与航天核心刊 · 分区以中科院最新版为准' });
     const grid = jcard.createEl('div', { cls: 'jrs-journal-grid' });
     JOURNALS.forEach((j) => {
       const c = grid.createEl('div', { cls: 'jrs-journal' });
@@ -1283,6 +1312,10 @@ class DashboardView extends ItemView {
       ab.setAttribute('title', j.name);
       const tag = top.createEl('span', { cls: 'jrs-journal-tag', text: j.tag });
       tag.setAttribute('data-tag', j.tag.includes('顶刊') ? 'top' : j.tag.includes('EI') ? 'cn' : 'mid');
+      if (j.cas) {
+        const z = top.createEl('span', { cls: 'jrs-journal-tag jrs-journal-zone', text: `中科院 ${j.cas}${j.jcr ? ' · ' + j.jcr : ''}` });
+        z.setAttribute('data-tag', j.cas.includes('1区') ? 'top' : j.cas.includes('EI') ? 'cn' : 'mid');
+      }
       c.createEl('div', { cls: 'jrs-journal-name', text: j.name });
       const match = c.createEl('div', { cls: 'jrs-journal-match' });
       match.textContent = `方向匹配：${j.match}`;
@@ -1394,7 +1427,8 @@ class DashboardView extends ItemView {
       const t = main.createEl('div', { cls: 'jrs-row-title', text: p.title });
       t.onclick = () => this.plugin.openReading(p);
       const meta = main.createEl('div', { cls: 'od-hint' });
-      meta.textContent = `${p.status}${p.priority ? ' · 优先级 ' + p.priority : ''}${p.year ? ' · ' + p.year : ''} · 进度 ${p.progress}%`;
+      const zone = this.plugin.zoneOf(p.venue);
+      meta.textContent = `${p.status}${zone ? ' · ' + zone.abbr + ' ' + zone.cas : ''}${p.priority ? ' · 优先级 ' + p.priority : ''}${p.year ? ' · ' + p.year : ''} · 进度 ${p.progress}%`;
       const acts = row.createEl('div', { cls: 'jrs-row-actions' });
       const read = acts.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '分栏阅读' });
       read.onclick = () => this.plugin.openReading(p);
@@ -1507,6 +1541,8 @@ class LibraryPanel {
     el.style.animationDelay = `${Math.min(i * 25, 300)}ms`;
     el.createEl('div', { cls: 'od-paper-title', text: p.title });
     const meta = el.createEl('div', { cls: 'od-paper-meta' });
+    const zone = this.plugin.zoneOf(p.venue);
+    if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) meta.appendChild(zb); }
     const parts = [p.year, p.venue, p.authorsShort].filter(Boolean);
     parts.forEach((seg, j) => {
       if (j > 0) meta.createEl('span', { cls: 'od-dot-sep', text: '·' });
@@ -2293,8 +2329,13 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     let cur = null;
     try { cur = ws.getMostRecentLeaf ? ws.getMostRecentLeaf() : ws.activeLeaf; } catch (e) { cur = null; }
     const vt = cur && cur.view && cur.view.getViewType ? cur.view.getViewType() : '';
-    if (vt === VIEW_DASHBOARD || vt === VIEW_LIBRARY) await ws.getLeaf('tab').openFile(f);
-    else await ws.getLeaf(false).openFile(f);
+    if (vt !== VIEW_DASHBOARD && vt !== VIEW_LIBRARY) {
+      await ws.getLeaf(false).openFile(f);
+      return;
+    }
+    /* JRS 视图内：复用同一个文件标签页，避免标签堆积 */
+    if (!this._fileLeaf || !this._fileLeaf.view) this._fileLeaf = ws.getLeaf('tab');
+    await this._fileLeaf.openFile(f);
   }
 
   async activateDashboard() {
@@ -2509,8 +2550,9 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (!pdf || isHttp(pdf)) { if (isHttp(pdf)) window.open(pdf); return; }
     const f = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
     if (f instanceof TFile) {
-      const right = this.app.workspace.getRightLeaf(false);
-      await right.openFile(f, { active: false });
+      /* 复用同一个右侧叶，避免 PDF 面板堆积 */
+      if (!this._rightPdfLeaf || !this._rightPdfLeaf.view) this._rightPdfLeaf = this.app.workspace.getRightLeaf(false);
+      await this._rightPdfLeaf.openFile(f, { active: false });
     } else new Notice('PDF 不在库内：可用「PDF 入库」迁移后分栏阅读');
   }
 
@@ -2637,6 +2679,43 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       console.error('[JRS] arXiv 获取失败', e);
       return { ts: cache?.ts || 0, items: cache?.items || [], justFetched: false };
     }
+  }
+
+  /** Crossref 正式期刊检索（v0.9） */
+  async searchCrossref(query, n = 8) {
+    const q = (query || 'satellite scheduling').trim();
+    const url = `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(q)}&rows=${Math.min(20, Math.max(3, n))}&sort=relevance&select=title,author,container-title,issued,DOI,abstract`;
+    const resp = await requestUrl({ url, method: 'GET', throw: false });
+    if (resp.status !== 200) throw new Error(`Crossref 返回 ${resp.status}`);
+    const items = (resp.json?.message?.items || []).map((w) => {
+      const title = (w.title || [])[0] || '';
+      const venue = (w['container-title'] || [])[0] || '';
+      const year = (w.issued?.['date-parts'] || [[]])[0][0];
+      const authors = (w.author || []).slice(0, 3).map((a) => [a.family, a.given].filter(Boolean).join(' ')).join(', ');
+      const abs = w.abstract ? w.abstract.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : '';
+      return {
+        source: 'crossref', title, venue, authors,
+        date: year ? String(year) : '',
+        year: year ? String(year) : '',
+        url: w.DOI ? `https://doi.org/${w.DOI}` : '',
+        doi: w.DOI || '',
+        summary: abs.slice(0, 300),
+      };
+    }).filter((x) => x.title && (x.venue ? !x.venue.toLowerCase().includes('preprint') : true));
+    return items;
+  }
+
+  async crossrefToLibrary(it) {
+    const topics = this.settings.topics.filter((t) => `${it.title} ${it.summary}`.toLowerCase().includes(t.toLowerCase().slice(0, 4)));
+    return this.createPaperNote({
+      title: it.title,
+      authors: it.authors,
+      year: it.year,
+      venue: it.venue,
+      status: '待读',
+      topics: topics.slice(0, 3),
+      pdf: it.doi ? `https://doi.org/${it.doi}` : '',
+    }, false);
   }
 
   async ensureArxivFresh() {
@@ -2980,6 +3059,27 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     await this.smartOpenFile(f);
   }
 
+  /** 期刊 → {abbr, cas, jcr}（基于 cas/jcr 字段，参考值） */
+  zoneOf(venue) {
+    if (!venue) return null;
+    const v = String(venue).toLowerCase().trim();
+    const j = JOURNALS.find((x) =>
+      v === x.abbr.toLowerCase() || v === x.name.toLowerCase()
+      || (x.abbr.length > 3 && v.includes(x.abbr.toLowerCase()))
+      || (x.name.length > 8 && v.includes(x.name.toLowerCase())));
+    return j ? { abbr: j.abbr, cas: j.cas, jcr: j.jcr } : null;
+  }
+
+  zoneBadge(zone) {
+    if (!zone) return null;
+    const el = document.createElement('span');
+    el.className = 'jrs-zone-badge';
+    el.textContent = `${zone.abbr} ${zone.cas}`;
+    el.setAttribute('data-zone', zone.cas.includes('1区') ? 'top' : zone.cas.includes('EI') ? 'cn' : 'mid');
+    el.title = `中科院分区：${zone.cas}${zone.jcr ? ' · JCR ' + zone.jcr : ''}（参考值，以最新官方表为准）`;
+    return el;
+  }
+
   /* ---------- 问答日志持久化（v0.8） ---------- */
 
   askLogPath() { return `科研工作台/AI问答/${todayKey()}.md`; }
@@ -3277,13 +3377,14 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const papers = this.getPapersSorted('year');
     if (!papers.length) { new Notice('文献库为空'); return; }
     const rows = [
-      '| 文献 | 年份 | 来源 | 方向 | 状态 | 优先级 | 评分 | 问题设定 | 网格作用 | 求解算法 |',
-      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+      '| 文献 | 年份 | 来源 | 分区 | 方向 | 状态 | 优先级 | 评分 | 问题设定 | 网格作用 | 求解算法 |',
+      '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ];
     for (const p of papers) {
       const t = p.title.replace(/\|/g, '\\|');
       const link = `[[${p.file.basename}|${t.length > 34 ? t.slice(0, 34) + '…' : t}]]`;
-      rows.push(`| ${link} | ${p.year || '—'} | ${p.venue || '—'} | ${p.topics.join('、') || '—'} | ${p.status} | ${p.priority || '—'} | ${'★'.repeat(p.rating) || '—'} |  |  |  |`);
+      const zone = this.zoneOf(p.venue);
+      rows.push(`| ${link} | ${p.year || '—'} | ${p.venue || '—'} | ${zone ? zone.abbr + ' ' + zone.cas : '—'} | ${p.topics.join('、') || '—'} | ${p.status} | ${p.priority || '—'} | ${'★'.repeat(p.rating) || '—'} |  |  |  |`);
     }
     const dir = this.settings.surveyNote.split('/').slice(0, -1).join('/');
     const matrixPath = `${dir ? dir + '/' : ''}文献矩阵.md`;

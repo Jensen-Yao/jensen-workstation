@@ -66,6 +66,7 @@ const DESCRIBE_ONE = `(function(I){
     done: false, tag: el.tagName, cls: String(el.className).slice(0, 44),
     text: (el.textContent || '').trim().slice(0, 24),
     visible: r.width > 0 && r.height > 0,
+    skip: (el.getAttribute('title') || '').includes('隐藏卡片'),
     disabled: el.disabled === true || el.hasClass && el.hasClass('is-disabled'),
     connected: el.isConnected,
   });
@@ -104,7 +105,7 @@ for (const sec of sections) {
     const info = JSON.parse(raw);
     if (info.done) break;
     idx += 1;
-    if (!info.visible || !info.connected || info.disabled) continue;
+    if (!info.visible || !info.connected || info.disabled || info.skip) continue;
     scanned += 1;
     await ev(RESET);
     const before = JSON.parse((await ev(SNAP)).result.result.value);
