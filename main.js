@@ -51,6 +51,7 @@ const SECTIONS = [
   { id: 'progress', icon: 'sprout', label: '研究进展', title: '研究进展', sub: '把读过的论文转化为判断与下一步' },
   { id: 'reader', icon: 'book-open', label: '阅读笔记', title: '阅读笔记', sub: '分栏精读：笔记 + PDF + AI 助手' },
   { id: 'submit', icon: 'target', label: '投稿冲刺', title: '投稿冲刺', sub: '目标期刊速查 · 投稿管线 · 截稿倒计时' },
+  { id: 'ask', icon: 'bot', label: '知识问答', title: '知识问答', sub: '基于你的文献库回答，来源可溯源（ima 式）' },
 ];
 
 /** 目标期刊库（EJOR 等运筹学顶刊 + 航天/卫星领域核心刊） */
@@ -99,6 +100,7 @@ const DEFAULT_SETTINGS = {
   pdfFolder: '科研工作台/PDF',
   questionsFolder: '科研工作台/研究问题',
   submissionsFolder: '科研工作台/投稿',
+  inboxFolder: '科研工作台/收件箱',
   graphCanvas: '科研工作台/论文图谱.canvas',
   dailyFolder: '',
   surveyNote: '科研工作台/综述大纲.md',
@@ -353,6 +355,7 @@ class DashboardView extends ItemView {
     if (this.section === 'queue') { pIcon = 'list-plus'; pLabel = '添加文献'; }
     if (this.section === 'reader') { pIcon = 'columns-2'; pLabel = '继续上次阅读'; }
     if (this.section === 'submit') { pIcon = 'plus'; pLabel = '新建投稿'; }
+    if (this.section === 'ask') { pIcon = 'inbox'; pLabel = '快速记想法'; }
     setIcon(primary.createSpan(), pIcon);
     primary.createSpan({ text: pLabel });
     primary.onclick = async () => {
@@ -361,6 +364,7 @@ class DashboardView extends ItemView {
       if (this.section === 'graph') { await this.plugin.generateGraphCanvas(true); this.render(); return; }
       if (this.section === 'reader') { this.continueLastReading(); return; }
       if (this.section === 'submit') { new AddSubmissionModal(this.plugin, () => this.render()).open(); return; }
+      if (this.section === 'ask') { new CaptureModal(this.plugin).open(); return; }
       new AddPaperModal(this.plugin, () => this.render()).open();
     };
     return bar;
@@ -454,6 +458,7 @@ class DashboardView extends ItemView {
       case 'progress': return await this.renderProgress(page);
       case 'reader': return this.renderReader(page);
       case 'submit': return this.renderSubmit(page);
+      case 'ask': return this.renderAsk(page);
       default: return this.renderHome(page);
     }
   }
@@ -930,6 +935,8 @@ class DashboardView extends ItemView {
       { icon: 'database', label: 'Bases', fn: () => this.plugin.generateBases() },
       { icon: 'sprout', label: 'AI 综述', fn: () => new AiSynthesisModal(this.plugin).open() },
       { icon: 'target', label: '投稿冲刺', fn: () => this.goto('submit') },
+      { icon: 'bot', label: '知识问答', fn: () => this.goto('ask') },
+      { icon: 'inbox', label: '快速记想法', fn: () => new CaptureModal(this.plugin).open() },
       { icon: 'pen-line', label: '综述大纲', fn: () => this.plugin.ensureSurveyNote(true) },
       { icon: 'library', label: '文献库', fn: () => this.goto('library') },
       { icon: 'search', label: '全局搜索', fn: () => this.app.commands.executeCommandById('global-search:open') },
@@ -1270,6 +1277,79 @@ class DashboardView extends ItemView {
         a.target = '_blank';
       }
     });
+  }
+
+  /* ========== 区段：知识问答（ima 哲学：你的知识库即 AI 大脑） ========== */
+
+  async renderAsk(page) {
+    if (!this._askHistory) this._askHistory = [];
+
+    const card = page.createEl('section', { cls: 'jrs-card jrs-ask' });
+    card.createEl('div', { cls: 'jrs-section-heading' }).appendChild(
+      (() => {
+        const h = document.createElement('div');
+        h.createEl('h2', { text: '问你的文献库' });
+        return h;
+      })(),
+    );
+
+    const inputRow = card.createEl('div', { cls: 'jrs-ask-input' });
+    const input = inputRow.createEl('input', { type: 'text', placeholder: '如：网格热力图如何驱动多星调度决策？EJOR 论文常用的基线算法有哪些？' });
+    const btn = inputRow.createEl('button', { cls: 'od-btn od-btn--primary', text: '提问' });
+    const busy = card.createEl('div', { cls: 'od-hint' });
+
+    const list = page.createEl('div', { cls: 'jrs-ask-list' });
+
+    const renderAnswer = (item) => {
+      const block = list.createEl('div', { cls: 'jrs-ask-item od-anim' });
+      const q = block.createEl('div', { cls: 'jrs-ask-q' });
+      setIcon(q.createSpan(), 'help-circle');
+      q.createSpan({ text: item.q });
+      const a = block.createEl('div', { cls: 'jrs-ask-a' });
+      MarkdownRenderer.render(this.app, item.a, a, '/', this);
+      /* 来源引用行 */
+      if (item.sources?.length) {
+        const src = block.createEl('div', { cls: 'jrs-ask-sources' });
+        src.createSpan({ cls: 'jrs-ask-sources-label', text: '来源' });
+        item.sources.forEach((p) => {
+          const chip = src.createEl('span', { cls: 'od-chip' });
+          chip.textContent = p.title.length > 26 ? p.title.slice(0, 26) + '…' : p.title;
+          chip.onclick = () => this.plugin.openPaper(p);
+        });
+      }
+      const acts = block.createEl('div', { cls: 'jrs-row-actions' });
+      const save = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '沉淀为研究问题' });
+      save.onclick = async () => {
+        await this.plugin.createQuestion(item.q, item.sources.map((p) => p.file.basename).join(','));
+        const c = await this.plugin.appendAnswerToQuestion(item.q, item.a);
+        new Notice('已沉淀到研究问题 ✅');
+      };
+    };
+
+    const ask = async () => {
+      const q = input.value.trim();
+      if (!q) return;
+      btn.setDisabled(true);
+      busy.textContent = '正在检索文献库并生成回答…';
+      try {
+        const item = await this.plugin.aiAsk(q);
+        this._askHistory.unshift(item);
+        list.empty();
+        this._askHistory.slice(0, 8).forEach(renderAnswer);
+        input.value = '';
+        busy.textContent = '';
+      } catch (e) {
+        busy.textContent = `❌ ${e.message}`;
+        new Notice(`问答失败：${e.message}`);
+      }
+      btn.setDisabled(false);
+    };
+    btn.onclick = ask;
+    input.onkeydown = (e) => { if (e.key === 'Enter') ask(); };
+
+    if (!this._askHistory.length) {
+      list.createEl('div', { cls: 'od-task-empty', text: this.plugin.settings.ai.apiKey ? '问一个你综述里的问题试试，回答会标注引用来源' : '先在 设置 → AI 助手 配置 API Key（DeepSeek 等），即可向自己的文献库提问' });
+    }
   }
 
   /* ========== 区段：阅读笔记 ========== */
@@ -1779,6 +1859,33 @@ class AiSynthesisModal extends Modal {
   }
 }
 
+class CaptureModal extends Modal {
+  constructor(plugin) {
+    super(plugin.app);
+    this.plugin = plugin;
+  }
+  onOpen() {
+    this.titleEl.setText('快速记想法（进收件箱）');
+    const { contentEl } = this;
+    contentEl.empty();
+    let text = '';
+    new Setting(contentEl).setName('想法 / 线索 / 待查文献').addTextArea((t) => {
+      t.inputEl.rows = 4;
+      t.inputEl.style.width = '340px';
+      t.inputEl.placeholder = '如：查一下 GeoSOT 剖分在敏捷卫星上的最新应用';
+      t.onChange(() => { text = t.getValue(); });
+    });
+    new Setting(contentEl)
+      .addButton((b) => b.setButtonText('存入收件箱').setCta().onClick(async () => {
+        if (!text.trim()) { new Notice('内容为空'); return; }
+        await this.plugin.captureThought(text.trim());
+        new Notice('已存入今日收件箱 📥');
+        this.close();
+      }))
+      .addButton((b) => b.setButtonText('取消').onClick(() => this.close()));
+  }
+}
+
 class AddSubmissionModal extends Modal {
   constructor(plugin, onDone) {
     super(plugin.app);
@@ -1930,6 +2037,7 @@ class JrsSettingTab extends PluginSettingTab {
     pathSetting('PDF 存放目录', 'pdfFolder');
     pathSetting('研究问题目录', 'questionsFolder');
     pathSetting('投稿目录', 'submissionsFolder', '投稿管线笔记存放位置');
+    pathSetting('收件箱目录', 'inboxFolder', '快速捕获的想法存放位置');
     pathSetting('图谱 Canvas', 'graphCanvas');
     pathSetting('日记目录', 'dailyFolder', '留空 = 库根目录');
     pathSetting('综述大纲笔记', 'surveyNote');
@@ -2025,7 +2133,9 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       ['sec-progress', '区段：研究进展', () => this.gotoSection('progress')],
       ['sec-reader', '区段：阅读笔记', () => this.gotoSection('reader')],
       ['sec-submit', '区段：投稿冲刺', () => this.gotoSection('submit')],
+      ['sec-ask', '区段：知识问答', () => this.gotoSection('ask')],
       ['new-submission', '新建投稿', () => new AddSubmissionModal(this).open()],
+      ['capture', '快速记想法（收件箱）', () => new CaptureModal(this).open()],
       ['add-paper', '添加文献', () => new AddPaperModal(this).open()],
       ['import-pdf', '批量导入 PDF 文件夹', () => new ImportFolderModal(this).open()],
       ['start-pomo', '开始专注（番茄钟）', () => { if (this.pomo.phase === 'idle') this.pomo.start(); }],
@@ -2693,6 +2803,74 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     await this.app.fileManager.processFrontMatter(q.file, (fm) => {
       fm.status = fm.status === 'answered' ? 'open' : 'answered';
     });
+  }
+
+  /* ---------- 知识问答（ima 式 grounding + 引用） ---------- */
+
+  async aiAsk(question) {
+    if (!this.settings.ai.apiKey) throw new Error('请先在 设置 → AI 助手 配置 API Key');
+    const papers = this.getPapers();
+    if (!papers.length) throw new Error('文献库为空');
+    /* 简易分词：英文词 + 中文 bigram，去停用词 */
+    const stop = new Set(['如何', '哪些', '什么', '作用', '方法', '问题', '研究', '一个', '可以', '以及', '常用', '进行', '之间', '对于']);
+    const latin = (question.toLowerCase().match(/[a-z][a-z0-9-]{2,}/g) || []);
+    const cjkRaw = question.match(/[\u4e00-\u9fff]{2,}/g) || [];
+    const terms = new Set();
+    latin.forEach((w) => terms.add(w));
+    cjkRaw.forEach((seg) => {
+      for (let i = 0; i + 2 <= seg.length; i += 1) {
+        const g = seg.slice(i, i + 2);
+        if (!stop.has(g)) terms.add(g);
+      }
+    });
+    const scored = papers.map((p) => {
+      let s = 0;
+      const title = p.title.toLowerCase();
+      const sum = (p.summary || '').toLowerCase();
+      const topics = p.topics.join(' ').toLowerCase();
+      terms.forEach((t) => {
+        if (title.includes(t)) s += 3;
+        if (topics.includes(t)) s += 2;
+        if (sum.includes(t)) s += 1;
+      });
+      s += p.rating * 0.3 + (p.priority === '高' ? 1 : p.priority === '中' ? 0.5 : 0) + (p.status === '已完成' ? 0.5 : 0);
+      return { p, s };
+    }).filter((x) => x.s > 1).sort((a, b) => b.s - a.s).slice(0, 6);
+    const picked = scored.length ? scored.map((x) => x.p) : papers.slice(0, 4);
+    const ctx = picked.map((p, i) => `[${i + 1}] ${p.title}（${p.year || ''}${p.venue ? ' · ' + p.venue : ''}）方向: ${p.topics.join('/') || '未标注'} 摘要: ${p.summary || p.authorsShort || '（详见笔记，摘要未生成）'}`).join('\n');
+    const out = await this.aiChat(
+      '你是严谨的科研助理。只依据给定文献回答，关键结论后用 [n] 标注来源编号；文献不足以回答时明确说明。用中文，输出 markdown 要点。',
+      `问题：${question}\n\n文献：\n${ctx}\n\n输出：直接给答案（可分点），关键处标注 [n]。`,
+      1200,
+    );
+    return { q: question, a: out, sources: picked };
+  }
+
+  async appendAnswerToQuestion(q, a) {
+    const name = sanitizeFilename(q);
+    const f = this.app.vault.getAbstractFileByPath(`${this.settings.questionsFolder}/${name}.md`)
+      || this.app.vault.getAbstractFileByPath(`${this.settings.questionsFolder}/${name} ${todayKey()}.md`);
+    if (!(f instanceof TFile)) return null;
+    await this.app.vault.append(f, `\n## AI 解答（${window.moment().format('M月D日 HH:mm')}）\n\n${a}\n`);
+    return f;
+  }
+
+  /* ---------- 快速捕获（ima 收藏哲学） ---------- */
+
+  async captureThought(text) {
+    await this.ensureFolder(this.settings.inboxFolder);
+    const path = `${this.settings.inboxFolder}/${todayKey()}.md`;
+    let f = this.app.vault.getAbstractFileByPath(path);
+    if (!(f instanceof TFile)) f = await this.app.vault.create(path, `# 收件箱 ${todayKey()}\n\n`);
+    await this.app.vault.append(f, `\n- ${window.moment().format('HH:mm')} ${text}`);
+    return f;
+  }
+
+  async getInboxToday() {
+    const f = this.app.vault.getAbstractFileByPath(`${this.settings.inboxFolder}/${todayKey()}.md`);
+    if (!(f instanceof TFile)) return [];
+    const content = await this.app.vault.cachedRead(f);
+    return content.split('\n').filter((l) => /^- \d{2}:\d{2} /.test(l.trim())).map((l) => l.trim().replace(/^- \d{2}:\d{2} /, ''));
   }
 
   /* ---------- 投稿管线 ---------- */

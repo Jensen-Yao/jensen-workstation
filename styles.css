@@ -2072,3 +2072,76 @@ body.jrs-bg-on .jrs-section-heading h2 {
   font-size: 12px;
   font-family: inherit;
 }
+
+/* ==========================================================================
+   v0.6 · 知识问答（ima 式）+ 收件箱
+   ========================================================================== */
+
+.jrs-ask-input {
+  display: flex;
+  gap: 8px;
+}
+
+.jrs-ask-input input {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 13.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--od-transition);
+}
+
+.jrs-ask-input input:focus { border-color: var(--od-accent); }
+
+.jrs-ask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.jrs-ask-item {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--od-radius-l);
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--background-primary) 45%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jrs-ask-q {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.jrs-ask-q svg { width: 15px; height: 15px; color: var(--od-accent); flex-shrink: 0; }
+
+.jrs-ask-a {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-normal);
+}
+
+.jrs-ask-a p { margin: 0.35em 0; }
+
+.jrs-ask-sources {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.jrs-ask-sources-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
