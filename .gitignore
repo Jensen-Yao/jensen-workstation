@@ -1,0 +1,4 @@
+shots/
+.jrs-tmp/
+data.json
+*.log

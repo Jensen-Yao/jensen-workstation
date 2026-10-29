@@ -1,0 +1,1354 @@
+/* ==========================================================================
+   OrbitDesk 轨道科研台 — styles
+   设计原则（Apple Fluid Interfaces）：
+   即时反馈 / 毛玻璃层级 / 尺寸相关字距 / 克制动画 / 减弱动态尊重
+   ========================================================================== */
+
+/* ---------- 设计令牌 ---------- */
+:root {
+  --od-space-1: 4px;
+  --od-space-2: 8px;
+  --od-space-3: 12px;
+  --od-space-4: 16px;
+  --od-space-5: 24px;
+
+  --od-radius-s: 8px;
+  --od-radius-m: 12px;
+  --od-radius-l: 16px;
+
+  --od-transition: 160ms cubic-bezier(0.25, 0.1, 0.25, 1);
+
+  /* 默认强调色：轨道蓝（可被设置覆盖） */
+  --od-accent: #4c7def;
+  --od-accent-soft: rgba(76, 125, 239, 0.14);
+  --od-accent-text: #ffffff;
+
+  --od-ok: #34a853;
+  --od-warn: #e8a33d;
+  --od-danger: #e5534b;
+}
+
+/* 状态色（文献状态流） */
+:root {
+  --od-st-todo: #8a93a6;      /* 待读 */
+  --od-st-reading: #4c7def;   /* 阅读中 */
+  --od-st-done: #34a853;      /* 已完成 */
+  --od-st-archived: #b48ce0;  /* 已归档 */
+}
+
+/* ---------- 视图骨架 ---------- */
+.orbitdesk-view {
+  padding: var(--od-space-5);
+  height: 100%;
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+.orbitdesk-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.orbitdesk-scroll::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+}
+
+/* ---------- 页头 ---------- */
+.od-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--od-space-4);
+  margin-bottom: var(--od-space-5);
+  flex-wrap: wrap;
+}
+
+.od-header-greet {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em; /* 大字号收紧字距 */
+  line-height: 1.15;
+  color: var(--text-normal);
+}
+
+.od-header-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+.od-header-sub .od-accent {
+  color: var(--od-accent);
+  font-weight: 600;
+}
+
+.od-header-actions {
+  display: flex;
+  gap: var(--od-space-2);
+  flex-wrap: wrap;
+}
+
+/* ---------- 卡片网格 ---------- */
+.od-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--od-space-3);
+  align-items: stretch;
+}
+
+/* 少于 3 列时依然保持节奏 */
+@container (max-width: 700px) {
+  .od-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.od-card {
+  position: relative;
+  border-radius: var(--od-radius-l);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  padding: var(--od-space-4);
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--od-space-3);
+  transition: border-color var(--od-transition), box-shadow var(--od-transition),
+    transform var(--od-transition);
+  overflow: hidden;
+}
+
+/* 毛玻璃模式（默认开启，可在设置关闭） */
+body.od-glass .od-card {
+  background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+}
+
+/* 顶部高光——毛玻璃材质的受光边（明色模式） */
+body.od-glass.theme-light .od-card {
+  border-top-color: rgba(255, 255, 255, 0.55);
+}
+
+.od-card:hover {
+  border-color: color-mix(in srgb, var(--od-accent) 45%, var(--background-modifier-border));
+  box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.18);
+}
+
+/* 跨列卡片 */
+.od-card--wide {
+  grid-column: span 2;
+}
+@container (max-width: 700px) {
+  .od-card--wide {
+    grid-column: span 1;
+  }
+}
+
+.od-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--od-space-2);
+}
+
+.od-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em; /* 小标签字距略正 */
+  color: var(--text-muted);
+  text-transform: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.od-card-title svg {
+  width: 14px;
+  height: 14px;
+  color: var(--od-accent);
+}
+
+/* ---------- 按钮 ---------- */
+.od-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  height: auto; /* 覆盖 Obsidian 核心 button 高度限制 */
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 100ms ease-out, background var(--od-transition),
+    border-color var(--od-transition), color var(--od-transition);
+  white-space: nowrap;
+}
+
+.od-btn:hover {
+  border-color: color-mix(in srgb, var(--od-accent) 50%, var(--background-modifier-border));
+}
+
+/* 按下即时反馈：pointer-down 即缩放 */
+.od-btn:active {
+  transform: scale(0.96);
+}
+
+.od-btn--primary {
+  background: var(--od-accent);
+  color: var(--od-accent-text);
+  border-color: transparent;
+}
+
+.od-btn--primary:hover {
+  filter: brightness(1.08);
+}
+
+.od-btn--ghost {
+  background: transparent;
+}
+
+.od-btn--sm {
+  padding: 3px 9px;
+  font-size: 11.5px;
+}
+
+.od-btn svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---------- 番茄钟 ---------- */
+.od-pomo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--od-space-3);
+  padding: var(--od-space-2) 0;
+}
+
+.od-pomo-ring {
+  position: relative;
+  width: 148px;
+  height: 148px;
+}
+
+.od-pomo-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.od-pomo-track {
+  fill: none;
+  stroke: var(--background-modifier-border);
+  stroke-width: 8;
+}
+
+.od-pomo-bar {
+  fill: none;
+  stroke: var(--od-accent);
+  stroke-width: 8;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1s linear, stroke 300ms ease;
+}
+
+.od-pomo-bar--break {
+  stroke: var(--od-ok);
+}
+
+.od-pomo-time {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.od-pomo-clock {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums; /* 计时器等宽数字，跳动不抖 */
+  color: var(--text-normal);
+  line-height: 1;
+}
+
+.od-pomo-phase {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+}
+
+.od-pomo-controls {
+  display: flex;
+  gap: var(--od-space-2);
+}
+
+.od-pomo-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.od-pomo-count b {
+  color: var(--od-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 日历 ---------- */
+.od-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  font-size: 12px;
+}
+
+.od-cal-dow {
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  padding: 4px 0;
+  letter-spacing: 0.04em;
+}
+
+.od-cal-day {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--od-radius-s);
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--od-transition), transform 100ms ease-out;
+  background: transparent;
+  border: none;
+}
+
+.od-cal-day:hover {
+  background: var(--background-modifier-hover);
+}
+
+.od-cal-day:active {
+  transform: scale(0.92);
+}
+
+.od-cal-day--other {
+  color: var(--text-faint);
+  visibility: hidden;
+}
+
+.od-cal-day--today {
+  background: var(--od-accent);
+  color: var(--od-accent-text);
+  font-weight: 700;
+}
+
+.od-cal-day--has-note {
+  font-weight: 600;
+}
+
+/* 日记点 + 专注热力点（右下角） */
+.od-cal-day .dot {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--od-accent);
+}
+
+.od-cal-day .dot--pomo {
+  left: 3px;
+  background: var(--od-ok);
+}
+
+.od-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--od-space-2);
+}
+
+.od-cal-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.od-cal-arrow {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  transition: background var(--od-transition), transform 100ms ease-out;
+}
+
+.od-cal-arrow:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.od-cal-arrow:active {
+  transform: scale(0.9);
+}
+
+.od-cal-arrow svg {
+  width: 14px;
+  height: 14px;
+}
+
+.od-cal-legend {
+  display: flex;
+  gap: var(--od-space-3);
+  margin-top: var(--od-space-2);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.od-cal-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.od-cal-legend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ---------- 待办 ---------- */
+.od-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.od-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--od-radius-s);
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background var(--od-transition);
+}
+
+.od-task:hover {
+  background: var(--background-modifier-hover);
+}
+
+.od-task input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--od-accent);
+}
+
+.od-task.is-done .od-task-text {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.od-task-empty {
+  color: var(--text-faint);
+  font-size: 12.5px;
+  padding: var(--od-space-3);
+  text-align: center;
+}
+
+/* ---------- 统计（文献 + 专注） ---------- */
+.od-stat-row {
+  display: flex;
+  gap: var(--od-space-3);
+}
+
+.od-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--od-radius-m);
+  background: var(--background-primary);
+}
+
+body.od-glass .od-stat {
+  background: color-mix(in srgb, var(--background-primary) 55%, transparent);
+}
+
+.od-stat-num {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+.od-stat-num em {
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.od-stat-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.od-stat--accent .od-stat-num {
+  color: var(--od-accent);
+}
+
+/* 专注时长条形图 */
+.od-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 64px;
+  margin-top: var(--od-space-2);
+}
+
+.od-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.od-bar {
+  width: 100%;
+  max-width: 26px;
+  border-radius: 4px 4px 2px 2px;
+  background: color-mix(in srgb, var(--od-accent) 75%, transparent);
+  min-height: 2px;
+  transition: height 400ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.od-bar-label {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 研究方向 chips ---------- */
+.od-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.od-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--od-accent-soft);
+  color: color-mix(in srgb, var(--od-accent) 80%, var(--text-normal));
+  border: 1px solid color-mix(in srgb, var(--od-accent) 25%, transparent);
+  cursor: pointer;
+  transition: transform 100ms ease-out, filter var(--od-transition);
+  user-select: none;
+}
+
+.od-chip:hover {
+  filter: brightness(1.05);
+}
+
+.od-chip:active {
+  transform: scale(0.95);
+}
+
+.od-chip b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+/* ---------- 综述进度 ---------- */
+.od-progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 0;
+}
+
+.od-progress-item + .od-progress-item {
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+.od-progress-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+
+.od-progress-name {
+  color: var(--text-normal);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.od-progress-frac {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.od-progressbar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.od-progressbar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--od-accent);
+  transition: width 500ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* ---------- 快速启动 ---------- */
+.od-launch {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--od-space-2);
+}
+
+.od-launch-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 14px 8px;
+  height: auto; /* 覆盖 Obsidian 核心 button 高度限制 */
+  min-height: 0;
+  border-radius: var(--od-radius-m);
+  background: var(--background-primary);
+  border: 1px solid transparent;
+  font-size: 12px;
+  color: var(--text-normal);
+  cursor: pointer;
+  transition: border-color var(--od-transition), transform 100ms ease-out,
+    background var(--od-transition);
+  text-align: center;
+}
+
+body.od-glass .od-launch-item {
+  background: color-mix(in srgb, var(--background-primary) 55%, transparent);
+}
+
+.od-launch-item:hover {
+  border-color: color-mix(in srgb, var(--od-accent) 40%, transparent);
+}
+
+.od-launch-item:active {
+  transform: scale(0.95);
+}
+
+.od-launch-item > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+}
+
+.od-launch-item svg {
+  width: 19px;
+  height: 19px;
+  color: var(--od-accent);
+  flex-shrink: 0;
+}
+
+/* ---------- 文献库 ---------- */
+.od-lib-toolbar {
+  display: flex;
+  gap: var(--od-space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--od-space-4);
+}
+
+.od-search {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  transition: border-color var(--od-transition);
+}
+
+body.od-glass .od-search {
+  background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.od-search:focus-within {
+  border-color: var(--od-accent);
+}
+
+.od-search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.od-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-normal);
+  font-size: 13px;
+  width: 100%;
+  font-family: inherit;
+}
+
+.od-search input::placeholder {
+  color: var(--text-faint);
+}
+
+/* 筛选 chips 行 */
+.od-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: var(--od-space-3);
+}
+
+.od-filter {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  cursor: pointer;
+  transition: all var(--od-transition);
+  user-select: none;
+}
+
+.od-filter:active {
+  transform: scale(0.95);
+}
+
+.od-filter.is-active {
+  background: var(--od-accent);
+  border-color: var(--od-accent);
+  color: var(--od-accent-text);
+  font-weight: 500;
+}
+
+/* 文献卡 */
+.od-papers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--od-space-3);
+}
+
+.od-paper {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--od-space-4);
+  border-radius: var(--od-radius-l);
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  transition: border-color var(--od-transition), box-shadow var(--od-transition);
+  cursor: pointer;
+}
+
+body.od-glass .od-paper {
+  background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+.od-paper:hover {
+  border-color: color-mix(in srgb, var(--od-accent) 45%, var(--background-modifier-border));
+  box-shadow: 0 6px 24px -8px rgba(0, 0, 0, 0.18);
+}
+
+.od-paper-title {
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--text-normal);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.od-paper-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.od-paper-meta .od-dot-sep {
+  color: var(--text-faint);
+}
+
+.od-paper-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.od-paper-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.od-icon-btn {
+  background: none;
+  border: none;
+  padding: 5px;
+  border-radius: 7px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  transition: background var(--od-transition), color var(--od-transition),
+    transform 100ms ease-out;
+}
+
+.od-icon-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.od-icon-btn:active {
+  transform: scale(0.88);
+}
+
+.od-icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 状态胶囊（点击流转） */
+.od-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform 100ms ease-out, filter var(--od-transition);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.od-status:active {
+  transform: scale(0.94);
+}
+
+.od-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.od-status[data-status="待读"] {
+  color: var(--od-st-todo);
+  background: color-mix(in srgb, var(--od-st-todo) 12%, transparent);
+}
+
+.od-status[data-status="阅读中"] {
+  color: var(--od-st-reading);
+  background: color-mix(in srgb, var(--od-st-reading) 12%, transparent);
+}
+
+.od-status[data-status="已完成"] {
+  color: var(--od-st-done);
+  background: color-mix(in srgb, var(--od-st-done) 12%, transparent);
+}
+
+.od-status[data-status="已归档"] {
+  color: var(--od-st-archived);
+  background: color-mix(in srgb, var(--od-st-archived) 12%, transparent);
+}
+
+/* 评分星 */
+.od-stars {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.od-star {
+  background: none;
+  border: none;
+  padding: 1px;
+  cursor: pointer;
+  color: var(--text-faint);
+  display: inline-flex;
+  transition: color 120ms ease, transform 100ms ease-out;
+}
+
+.od-star:active {
+  transform: scale(0.8);
+}
+
+.od-star svg {
+  width: 13px;
+  height: 13px;
+}
+
+.od-star.is-on {
+  color: var(--od-warn);
+}
+
+/* 空状态 */
+.od-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-faint);
+  font-size: 13.5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--od-space-3);
+}
+
+.od-empty svg {
+  width: 40px;
+  height: 40px;
+  opacity: 0.4;
+}
+
+/* ---------- 通用 ---------- */
+.od-section-title {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: var(--od-space-5) 0 var(--od-space-3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.od-count-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--background-modifier-border);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.od-hint {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+
+/* 动画入场：卡片错落淡入（尊重减弱动态） */
+@keyframes od-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.od-anim {
+  animation: od-rise 320ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .od-anim {
+    animation: none;
+  }
+  .od-btn:active,
+  .od-chip:active,
+  .od-icon-btn:active,
+  .od-cal-day:active,
+  .od-cal-arrow:active,
+  .od-status:active {
+    transform: none;
+  }
+  .od-pomo-bar,
+  .od-progressbar-fill,
+  .od-bar {
+    transition: none;
+  }
+}
+
+/* 移动端 / 窄容器：卡片单列堆叠，间距收紧 */
+@container (max-width: 480px) {
+  .orbitdesk-view {
+    padding: var(--od-space-4);
+  }
+  .od-header-greet {
+    font-size: 21px;
+  }
+}
+
+/* 打印友好（隐藏交互控件） */
+@media print {
+  .od-header-actions,
+  .od-pomo-controls,
+  .od-paper-actions {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   v0.2 · Jensen 科研工作站 扩展样式
+   ========================================================================== */
+
+/* ---------- 页头（问候 + 全局搜索 + 动作） ---------- */
+.jrs-header {
+  align-items: center;
+}
+
+.jrs-header-left {
+  flex-shrink: 0;
+}
+
+/* 全局搜索 omnibox（借鉴 Hearth 搜索中心） */
+.jrs-omnibox {
+  flex: 1;
+  max-width: 520px;
+  min-width: 220px;
+  position: relative;
+}
+
+.jrs-omnibox-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 380px;
+  overflow-y: auto;
+  border-radius: var(--od-radius-l);
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.3);
+  z-index: var(--layer-popover, 50);
+  display: none;
+  padding: 6px;
+}
+
+body.od-glass .jrs-omnibox-panel {
+  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+}
+
+.jrs-omnibox-panel.is-open { display: block; }
+
+.jrs-omni-group {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 8px 10px 4px;
+}
+
+.jrs-omni-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--od-radius-m);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.jrs-omni-item:hover, .jrs-omni-item.is-active {
+  background: var(--background-modifier-hover);
+}
+
+.jrs-omni-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--od-accent);
+  flex-shrink: 0;
+}
+
+.jrs-omni-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jrs-omni-sub {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jrs-omni-empty {
+  padding: 18px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+
+/* ---------- 卡片控制（宽度档位 / 拖拽） ---------- */
+.od-card-ctrl {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--od-transition);
+}
+
+.od-card:hover .od-card-ctrl { opacity: 1; }
+
+.od-card-size-btn svg { width: 12px; height: 12px; }
+
+.od-card[draggable="true"] { cursor: grab; }
+
+.od-card--dragging {
+  opacity: 0.45;
+  transform: scale(0.98);
+  cursor: grabbing;
+}
+
+/* 宽度档位：2 = 宽（跨两列），3 = 大（跨两列两行） */
+.od-card[data-size="2"] { grid-column: span 2; }
+.od-card[data-size="3"] {
+  grid-column: span 2;
+  grid-row: span 2;
+  min-height: 420px;
+}
+
+@container (max-width: 700px) {
+  .od-card[data-size="2"], .od-card[data-size="3"] { grid-column: span 1; }
+}
+
+/* ---------- arXiv 资讯卡 ---------- */
+.jrs-arxiv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.jrs-arxiv-head .od-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jrs-arxiv-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.jrs-arxiv-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 6px;
+  border-radius: var(--od-radius-s);
+  transition: background var(--od-transition);
+}
+
+.jrs-arxiv-item + .jrs-arxiv-item {
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+.jrs-arxiv-item:hover { background: var(--background-modifier-hover); }
+
+.jrs-arxiv-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.jrs-arxiv-title {
+  font-size: 12.8px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-normal);
+  cursor: pointer;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.jrs-arxiv-title:hover { color: var(--od-accent); }
+
+/* ---------- 自定义卡片 ---------- */
+.jrs-note-embed {
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  padding-right: 4px;
+}
+
+.jrs-count-num {
+  font-size: 52px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-align: center;
+  color: var(--od-accent);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  margin: 8px 0 2px;
+}
+
+.jrs-count-num.is-urgent { color: var(--od-danger); }
+
+.jrs-web-frame {
+  width: 100%;
+  height: 300px;
+  border: none;
+  border-radius: var(--od-radius-m);
+  background: var(--background-primary);
+}
+
+/* ---------- 待办快速添加行 ---------- */
+.jrs-task-add {
+  display: flex;
+  gap: 6px;
+}
+
+.jrs-task-add input {
+  flex: 1;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 7px 12px;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--od-transition);
+}
+
+.jrs-task-add input:focus { border-color: var(--od-accent); }
+
+/* ---------- 选择态 chip（添加文献弹窗） ---------- */
+.od-chip--select { opacity: 0.45; cursor: pointer; }
+.od-chip--select.is-selected { opacity: 1; }
+
+.jrs-chip-x { margin-left: 2px; font-weight: 700; }
+
+/* ---------- 可点击提示 ---------- */
+.od-clickable { cursor: pointer; }
+
+/* ---------- 背景与毛玻璃联动（作用域：插件视图） ---------- */
+body.jrs-bg-on .jrs-view {
+  background: var(--jrs-bg-image, none) var(--jrs-bg, transparent) center / cover no-repeat fixed;
+  border-radius: var(--od-radius-l);
+}
+
+body.jrs-bg-on.od-glass .od-card {
+  background: color-mix(in srgb, var(--background-secondary) 55%, transparent);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  box-shadow: 0 8px 28px -12px rgba(0, 0, 0, 0.35);
+}
+
+body.jrs-bg-on.od-glass .od-stat,
+body.jrs-bg-on.od-glass .od-launch-item {
+  background: color-mix(in srgb, var(--background-primary) 40%, transparent);
+}
+
+/* ---------- 卡片管理弹窗 ---------- */
+.jrs-cm-list {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding-right: 4px;
+}
+
+.jrs-cm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--background-modifier-border);
+}
+
+.jrs-cm-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-normal);
+}
+
+.jrs-cm-cfg { margin-top: 4px; }
+
+.jrs-import-result { margin: 8px 0; min-height: 20px; }
+
+/* ---------- 减弱动态（扩展） ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .od-card--dragging { transform: none; }
+}
+
+/* ---------- v0.2.1：背景模式下加强可读性 ---------- */
+body.jrs-bg-on.od-glass .od-card {
+  background: color-mix(in srgb, var(--background-secondary) 64%, transparent);
+}
+
+body.jrs-bg-on .od-hint,
+body.jrs-bg-on .od-card-title,
+body.jrs-bg-on .od-stat-label,
+body.jrs-bg-on .od-pomo-count {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
