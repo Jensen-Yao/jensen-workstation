@@ -62,6 +62,13 @@
 - **阅读进度系统**：`reading_progress` 0-100，>0 自动转阅读中、100 自动完成
 - **研究问题**：疑问沉淀为问题笔记，状态流转
 
+
+## 🆕 v0.5「投稿冲刺」—— 锚定 EJOR 等顶刊
+
+- **目标期刊速查**：内置 15 本（EJOR / OR / INFORMS JoC / C&OR / Omega / Networks / AST / Acta Astronautica / ASR / IEEE TAES / TSMC / JAIS / 宇航学报 / 航空学报 / 系统工程与电子技术），含定位标签、方向匹配点、投稿入口链接
+- **投稿管线**：新建投稿（关联目标刊 + 截稿日）→ 状态流（写作中→准备→已投→审稿→大修/小修→接收/拒稿/改投）一键流转，DDL 倒计时实时显示
+- 投稿笔记自带写作计划模板（模型/算法/实验/综述/格式五步）与审稿回应区
+
 ## 📦 安装
 
 **BRAT（推荐）**：安装 [BRAT](https://github.com/TfTHacker/obsidian42-brat) → Add Beta plugin → `Jensen-Yao/jensen-workstation`

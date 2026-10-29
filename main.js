@@ -50,7 +50,29 @@ const SECTIONS = [
   { id: 'graph', icon: 'git-fork', label: '论文图谱', title: '论文图谱', sub: '探索论文与研究方向之间的联系' },
   { id: 'progress', icon: 'sprout', label: '研究进展', title: '研究进展', sub: '把读过的论文转化为判断与下一步' },
   { id: 'reader', icon: 'book-open', label: '阅读笔记', title: '阅读笔记', sub: '分栏精读：笔记 + PDF + AI 助手' },
+  { id: 'submit', icon: 'target', label: '投稿冲刺', title: '投稿冲刺', sub: '目标期刊速查 · 投稿管线 · 截稿倒计时' },
 ];
+
+/** 目标期刊库（EJOR 等运筹学顶刊 + 航天/卫星领域核心刊） */
+const JOURNALS = [
+  { abbr: 'EJOR', name: 'European Journal of Operational Research', field: '运筹学', tag: '顶刊', publisher: 'Elsevier', match: '调度/优化方法+充分实验', link: 'https://www.editorialmanager.com/ejor/', note: '偏方法严谨与计算实验，规划类综述与方法文均常见' },
+  { abbr: 'OR', name: 'Operations Research', field: '运筹学', tag: '顶刊', publisher: 'INFORMS', match: '理论深度/算法贡献', link: 'https://pubsonline.informs.org/journal/opre', note: 'INFORMS 旗舰，理论要求高' },
+  { abbr: 'INFORMS JoC', name: 'INFORMS Journal on Computing', field: '运筹/计算', tag: '顶刊', publisher: 'INFORMS', match: '元启发式/进化算法/学习+优化', link: 'https://pubsonline.informs.org/journal/ijoc', note: '算法与计算实验导向，适合智能调度算法' },
+  { abbr: 'C&OR', name: 'Computers & Operations Research', field: '运筹/计算', tag: '主流', publisher: 'Elsevier', match: '调度算法/组合优化应用', link: 'https://www.editorialmanager.com/caor/', note: '应用型算法文友好' },
+  { abbr: 'Omega', name: 'Omega - The International Journal of Management Science', field: '运筹/管理', tag: '顶刊', publisher: 'Elsevier', match: '决策支持/应用驱动', link: 'https://www.editorialmanager.com/omega/', note: '强调应用价值与管理洞察' },
+  { abbr: 'Networks', name: 'Networks', field: '图论/网络', tag: '主流', publisher: 'Wiley', match: '网络流/图模型', link: 'https://onlinelibrary.wiley.com/journal/10970037', note: '网络结构建模对口' },
+  { abbr: 'AST', name: 'Aerospace Science and Technology', field: '航空航天', tag: '顶刊', publisher: 'Elsevier', match: '卫星任务规划/星座调度', link: 'https://www.editorialmanager.com/aescte/', note: '航天技术与系统，卫星规划高频期刊' },
+  { abbr: 'AA', name: 'Acta Astronautica', field: '航天', tag: '顶刊', publisher: 'Elsevier', match: '任务规划/在轨系统', link: 'https://www.editorialmanager.com/actaastro/', note: 'IAA 期刊，航天任务与系统工程' },
+  { abbr: 'ASR', name: 'Advances in Space Research', field: '航天', tag: '主流', publisher: 'Elsevier', match: '对地观测/星座应用', link: 'https://www.editorialmanager.com/asesre/', note: 'COSPAR 期刊，观测任务方向' },
+  { abbr: 'IEEE TAES', name: 'IEEE Trans. Aerospace and Electronic Systems', field: '航空电子', tag: '顶刊', publisher: 'IEEE', match: '调度系统/探测系统', link: 'https://ieee.atyponrex.com/journal/taes', note: '电子系统+任务规划结合' },
+  { abbr: 'IEEE TSMC', name: 'IEEE Trans. Systems, Man, and Cybernetics: Systems', field: '系统工程', tag: '顶刊', publisher: 'IEEE', match: '智能调度系统', link: 'https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=6221021', note: '系统智能方法' },
+  { abbr: 'JAIS', name: 'Journal of Aerospace Information Systems', field: '航天信息', tag: '主流', publisher: 'AIAA', match: '规划信息系统', link: 'https://arc.aiaa.org/journal/jais', note: 'AIAA 信息系系统方向' },
+  { abbr: '宇航学报', name: '宇航学报', field: '航天(中文)', tag: 'EI/中文核心', publisher: '中国宇航学会', match: '卫星任务规划主阵地', link: '', note: '国内卫星规划领域核心发表阵地' },
+  { abbr: '航空学报', name: '航空学报', field: '航空(中文)', tag: 'EI/中文核心', publisher: '中国航空学会', match: '飞行器/任务系统', link: '', note: '国内航空领域旗舰' },
+  { abbr: '系统工程与电子技术', name: '系统工程与电子技术', field: '系统工程(中文)', tag: 'EI/中文核心', publisher: '中国航天科工', match: '调度/优化应用', link: '', note: '系统工程应用，周期较快' },
+];
+
+const SUB_STATUSES = ['写作中', '准备投稿', '已投', '审稿中', '大修', '小修', '已接收', '已拒稿', '改投'];
 
 const BUILTIN_CARDS = [
   { id: 'arxiv', name: 'arXiv 资讯', icon: 'newspaper', size: { w: 2, h: 4 } },
@@ -76,6 +98,7 @@ const DEFAULT_SETTINGS = {
   libFolder: '科研工作台/文献',
   pdfFolder: '科研工作台/PDF',
   questionsFolder: '科研工作台/研究问题',
+  submissionsFolder: '科研工作台/投稿',
   graphCanvas: '科研工作台/论文图谱.canvas',
   dailyFolder: '',
   surveyNote: '科研工作台/综述大纲.md',
@@ -329,6 +352,7 @@ class DashboardView extends ItemView {
     if (this.section === 'graph') { pIcon = 'git-fork'; pLabel = '重建图谱'; }
     if (this.section === 'queue') { pIcon = 'list-plus'; pLabel = '添加文献'; }
     if (this.section === 'reader') { pIcon = 'columns-2'; pLabel = '继续上次阅读'; }
+    if (this.section === 'submit') { pIcon = 'plus'; pLabel = '新建投稿'; }
     setIcon(primary.createSpan(), pIcon);
     primary.createSpan({ text: pLabel });
     primary.onclick = async () => {
@@ -336,6 +360,7 @@ class DashboardView extends ItemView {
       if (this.section === 'progress') { new AiSynthesisModal(this.plugin).open(); return; }
       if (this.section === 'graph') { await this.plugin.generateGraphCanvas(true); this.render(); return; }
       if (this.section === 'reader') { this.continueLastReading(); return; }
+      if (this.section === 'submit') { new AddSubmissionModal(this.plugin, () => this.render()).open(); return; }
       new AddPaperModal(this.plugin, () => this.render()).open();
     };
     return bar;
@@ -428,6 +453,7 @@ class DashboardView extends ItemView {
       case 'graph': return await this.renderGraph(page);
       case 'progress': return await this.renderProgress(page);
       case 'reader': return this.renderReader(page);
+      case 'submit': return this.renderSubmit(page);
       default: return this.renderHome(page);
     }
   }
@@ -903,6 +929,7 @@ class DashboardView extends ItemView {
       { icon: 'table', label: '文献矩阵', fn: () => this.plugin.generateMatrix() },
       { icon: 'database', label: 'Bases', fn: () => this.plugin.generateBases() },
       { icon: 'sprout', label: 'AI 综述', fn: () => new AiSynthesisModal(this.plugin).open() },
+      { icon: 'target', label: '投稿冲刺', fn: () => this.goto('submit') },
       { icon: 'pen-line', label: '综述大纲', fn: () => this.plugin.ensureSurveyNote(true) },
       { icon: 'library', label: '文献库', fn: () => this.goto('library') },
       { icon: 'search', label: '全局搜索', fn: () => this.app.commands.executeCommandById('global-search:open') },
@@ -1176,6 +1203,75 @@ class DashboardView extends ItemView {
     });
   }
 
+  /* ========== 区段：投稿冲刺 ========== */
+
+  renderSubmit(page) {
+    /* 我的投稿管线 */
+    const pipe = page.createEl('section', { cls: 'jrs-card' });
+    let head = pipe.createEl('div', { cls: 'jrs-section-heading' });
+    head.createEl('h2', { text: '我的投稿管线' });
+    head.createSpan({ text: '状态流：写作中 → 已投 → 审稿 → 修回 → 接收/改投' });
+    const addBtn = pipe.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '＋ 新建投稿' });
+    addBtn.onclick = () => new AddSubmissionModal(this.plugin, () => this.render()).open();
+
+    const subs = this.plugin.getSubmissions();
+    if (!subs.length) {
+      pipe.createEl('div', { cls: 'od-task-empty', text: '还没有投稿条目，从综述大纲或新 idea 建一条，盯住它到接收' });
+    }
+    const stages = [['写作中', '准备投稿'], ['已投', '审稿中'], ['大修', '小修'], ['已接收'], ['已拒稿', '改投']];
+    stages.forEach((stage) => {
+      const items = subs.filter((s) => stage.includes(s.status));
+      if (!items.length) return;
+      const g = pipe.createEl('div', { cls: 'jrs-submit-group' });
+      g.createEl('div', { cls: 'jrs-submit-stage', text: stage.join(' / ') });
+      items.forEach((s) => {
+        const row = g.createEl('div', { cls: 'jrs-paper-row jrs-submit-row' });
+        const main = row.createEl('div', { cls: 'jrs-row-main' });
+        const t = main.createEl('div', { cls: 'jrs-row-title', text: `${s.title} → ${s.target}` });
+        t.onclick = () => this.app.workspace.getLeaf(false).openFile(s.file);
+        const hint = main.createEl('div', { cls: 'od-hint' });
+        let meta = `${s.status} · ${window.moment(s.added).format('M月D日')} 起`;
+        if (s.deadline) {
+          const d = window.moment(s.deadline, 'YYYY-MM-DD').diff(window.moment().startOf('day'), 'days');
+          meta += d >= 0 ? ` · 截稿还剩 ${d} 天` : ` · 截稿已过 ${-d} 天`;
+        }
+        hint.textContent = meta;
+        const acts = row.createEl('div', { cls: 'jrs-row-actions' });
+        const st = acts.createEl('span', { cls: 'od-status jrs-sub-status', attr: { 'data-sub': s.status } });
+        st.textContent = s.status;
+        st.title = '点击流转到下一状态';
+        st.onclick = async () => { await this.plugin.cycleSubmission(s); this.render(); };
+        const open = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '打开' });
+        open.onclick = () => this.app.workspace.getLeaf(false).openFile(s.file);
+      });
+    });
+
+    /* 目标期刊速查 */
+    const jcard = page.createEl('section', { cls: 'jrs-card' });
+    head = jcard.createEl('div', { cls: 'jrs-section-heading' });
+    head.createEl('h2', { text: '目标期刊速查' });
+    head.createSpan({ text: 'EJOR 等运筹顶刊与航天/卫星核心刊 · 投稿链接与定位' });
+    const grid = jcard.createEl('div', { cls: 'jrs-journal-grid' });
+    JOURNALS.forEach((j) => {
+      const c = grid.createEl('div', { cls: 'jrs-journal' });
+      const top = c.createEl('div', { cls: 'jrs-journal-top' });
+      const ab = top.createEl('span', { cls: 'jrs-journal-abbr', text: j.abbr });
+      ab.setAttribute('title', j.name);
+      const tag = top.createEl('span', { cls: 'jrs-journal-tag', text: j.tag });
+      tag.setAttribute('data-tag', j.tag.includes('顶刊') ? 'top' : j.tag.includes('EI') ? 'cn' : 'mid');
+      c.createEl('div', { cls: 'jrs-journal-name', text: j.name });
+      const match = c.createEl('div', { cls: 'jrs-journal-match' });
+      match.textContent = `方向匹配：${j.match}`;
+      c.createEl('div', { cls: 'od-hint', text: `${j.publisher} · ${j.field}` });
+      if (j.note) c.createEl('div', { cls: 'jrs-journal-note', text: j.note });
+      if (j.link) {
+        const a = c.createEl('a', { cls: 'jrs-journal-link', text: '投稿入口 ↗' });
+        a.href = j.link;
+        a.target = '_blank';
+      }
+    });
+  }
+
   /* ========== 区段：阅读笔记 ========== */
 
   renderReader(page) {
@@ -1411,7 +1507,7 @@ class AddPaperModal extends Modal {
     mkText('标题 *', 'title', '如：基于网格剖分的敏捷卫星区域目标观测调度方法');
     mkText('作者', 'authors', '如：伍国华, 祝江汉');
     mkText('年份', 'year', '2024');
-    mkText('期刊 / 会议', 'venue', '如：宇航学报');
+    mkText('期刊 / 会议', 'venue', 'EJOR / AST / 宇航学报…（可选目标刊）');
     new Setting(contentEl).setName('PDF 链接或库内路径（可选）').addText((t) => {
       t.inputEl.placeholder = 'https://arxiv.org/pdf/… 或 科研工作台/PDF/x.pdf';
       t.onChange(() => { this.data.pdf = t.getValue(); });
@@ -1683,6 +1779,52 @@ class AiSynthesisModal extends Modal {
   }
 }
 
+class AddSubmissionModal extends Modal {
+  constructor(plugin, onDone) {
+    super(plugin.app);
+    this.plugin = plugin; this.onDone = onDone;
+  }
+  onOpen() {
+    this.titleEl.setText('新建投稿');
+    const { contentEl } = this;
+    contentEl.empty();
+    let title = ''; let target = JOURNALS[0].abbr; let deadline = ''; let note = '';
+    new Setting(contentEl).setName('论文 / 工作标题 *').addText((t) => {
+      t.inputEl.placeholder = '如：网格热力驱动的多星协同调度方法';
+      t.onChange(() => { title = t.getValue(); });
+    });
+    const jSetting = new Setting(contentEl).setName('目标期刊').setDesc('下拉选择，或手动输入其他期刊');
+    const sel = jSetting.controlEl.createEl('select', { cls: 'dropdown' });
+    JOURNALS.forEach((j) => {
+      const o = sel.createEl('option', { value: j.abbr });
+      o.textContent = `${j.abbr} — ${j.tag} · ${j.field}`;
+    });
+    let custom = '';
+    const customInput = jSetting.controlEl.createEl('input', { type: 'text', placeholder: '其他期刊缩写（可选）' });
+    customInput.className = 'jrs-inline-input';
+    customInput.oninput = () => { custom = customInput.value.trim(); };
+    sel.onchange = () => { target = sel.value; };
+    new Setting(contentEl).setName('目标截稿日（可选）').addText((t) => {
+      t.inputEl.placeholder = 'YYYY-MM-DD';
+      t.onChange(() => { deadline = t.getValue().trim(); });
+    });
+    new Setting(contentEl).setName('备注（可选）').addTextArea((t) => {
+      t.inputEl.rows = 2;
+      t.inputEl.style.width = '320px';
+      t.onChange(() => { note = t.getValue(); });
+    });
+    new Setting(contentEl)
+      .addButton((b) => b.setButtonText('创建').setCta().onClick(async () => {
+        if (!title.trim()) { new Notice('标题不能为空'); return; }
+        await this.plugin.createSubmission(title.trim(), custom || target, deadline, note.trim());
+        new Notice(`投稿已建档：${(custom || target)} 🎯`);
+        this.close();
+        if (this.onDone) this.onDone();
+      }))
+      .addButton((b) => b.setButtonText('取消').onClick(() => this.close()));
+  }
+}
+
 class AddQuestionModal extends Modal {
   constructor(plugin, onDone) {
     super(plugin.app);
@@ -1787,6 +1929,7 @@ class JrsSettingTab extends PluginSettingTab {
     pathSetting('文献笔记目录', 'libFolder');
     pathSetting('PDF 存放目录', 'pdfFolder');
     pathSetting('研究问题目录', 'questionsFolder');
+    pathSetting('投稿目录', 'submissionsFolder', '投稿管线笔记存放位置');
     pathSetting('图谱 Canvas', 'graphCanvas');
     pathSetting('日记目录', 'dailyFolder', '留空 = 库根目录');
     pathSetting('综述大纲笔记', 'surveyNote');
@@ -1881,6 +2024,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       ['sec-graph', '区段：论文图谱', () => this.gotoSection('graph')],
       ['sec-progress', '区段：研究进展', () => this.gotoSection('progress')],
       ['sec-reader', '区段：阅读笔记', () => this.gotoSection('reader')],
+      ['sec-submit', '区段：投稿冲刺', () => this.gotoSection('submit')],
+      ['new-submission', '新建投稿', () => new AddSubmissionModal(this).open()],
       ['add-paper', '添加文献', () => new AddPaperModal(this).open()],
       ['import-pdf', '批量导入 PDF 文件夹', () => new ImportFolderModal(this).open()],
       ['start-pomo', '开始专注（番茄钟）', () => { if (this.pomo.phase === 'idle') this.pomo.start(); }],
@@ -2547,6 +2692,69 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   async toggleQuestion(q) {
     await this.app.fileManager.processFrontMatter(q.file, (fm) => {
       fm.status = fm.status === 'answered' ? 'open' : 'answered';
+    });
+  }
+
+  /* ---------- 投稿管线 ---------- */
+
+  getSubmissions() {
+    const folder = this.settings.submissionsFolder;
+    const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder + '/'));
+    return files.map((f) => {
+      const fm = (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {};
+      return {
+        file: f, added: f.stat.ctime,
+        title: fm.title || f.basename,
+        target: fm.target || '',
+        status: SUB_STATUSES.includes(fm.status) ? fm.status : '写作中',
+        deadline: fm.deadline || '',
+        note: fm.note || '',
+      };
+    }).sort((a, b) => b.added - a.added);
+  }
+
+  async createSubmission(title, target, deadline = '', note = '') {
+    await this.ensureFolder(this.settings.submissionsFolder);
+    const name = sanitizeFilename(`${title} - ${target}`);
+    let path = `${this.settings.submissionsFolder}/${name}.md`;
+    if (this.app.vault.getAbstractFileByPath(path)) path = `${this.settings.submissionsFolder}/${name} ${todayKey()}.md`;
+    const j = JOURNALS.find((x) => x.abbr === target);
+    const content = [
+      '---',
+      `title: "${title.replace(/"/g, "'")}"`,
+      `target: ${target}`,
+      'status: 写作中',
+      deadline ? `deadline: ${deadline}` : 'deadline: ',
+      `created: ${todayKey()}`,
+      '---',
+      '',
+      `# ${title}`,
+      '',
+      `🎯 目标期刊：**${target}**${j ? `（${j.name}，${j.tag}）` : ''}`,
+      '',
+      j ? `> 匹配点：${j.match}。${j.note}。${j.link ? `投稿入口：${j.link}` : ''}` : '',
+      '',
+      '## 核心贡献（3 条以内）',
+      '- ',
+      '',
+      '## 写作计划',
+      '- [ ] 模型与符号表',
+      '- [ ] 算法框架图',
+      '- [ ] 计算实验与对比基线',
+      '- [ ] 引言与文献综述（联动文献矩阵）',
+      '- [ ] 全文润色与格式（期刊模板）',
+      '',
+      '## 审稿意见与回应',
+      '',
+      note ? `## 备注\n${note}` : '',
+    ].filter((x) => x !== undefined).join('\n');
+    const f = await this.app.vault.create(path, content);
+    return f;
+  }
+
+  async cycleSubmission(s) {
+    await this.app.fileManager.processFrontMatter(s.file, (fm) => {
+      fm.status = SUB_STATUSES[(SUB_STATUSES.indexOf(fm.status) + 1) % SUB_STATUSES.length];
     });
   }
 

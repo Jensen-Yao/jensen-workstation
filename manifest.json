@@ -1,7 +1,7 @@
 {
   "id": "jensen-workstation",
   "name": "Jensen 科研工作站",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "minAppVersion": "1.5.0",
   "description": "科研一体化工作台：卡片仪表盘（番茄钟/日历/待办/arXiv 资讯）、文献库与状态流、综述进度、全局搜索、自定义卡片、背景毛玻璃、AI 摘要与 MinerU 解析。",
   "author": "Jensen-Yao",

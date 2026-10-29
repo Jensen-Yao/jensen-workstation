@@ -1964,3 +1964,111 @@ body.jrs-bg-on .jrs-section-heading h2 {
 
 /* 研究进展章节行距统一 */
 .od-progress-item { padding: 8px 0; }
+
+/* ==========================================================================
+   v0.5 · 投稿冲刺区段
+   ========================================================================== */
+
+.jrs-submit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+
+.jrs-submit-stage {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.jrs-submit-row { padding: 8px 10px; }
+
+.od-status.jrs-sub-status[data-sub="已接收"] { color: var(--od-ok); background: color-mix(in srgb, var(--od-ok) 12%, transparent); }
+.od-status.jrs-sub-status[data-sub="已拒稿"] { color: var(--od-danger); background: color-mix(in srgb, var(--od-danger) 12%, transparent); }
+.od-status.jrs-sub-status[data-sub="大修"],
+.od-status.jrs-sub-status[data-sub="小修"] { color: var(--od-warn); background: color-mix(in srgb, var(--od-warn) 12%, transparent); }
+
+/* 期刊速查网格 */
+.jrs-journal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.jrs-journal {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--od-radius-m);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  background: color-mix(in srgb, var(--background-primary) 50%, transparent);
+}
+
+.jrs-journal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.jrs-journal-abbr {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--od-accent);
+}
+
+.jrs-journal-tag {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.jrs-journal-tag[data-tag="top"] { color: var(--od-danger); background: color-mix(in srgb, var(--od-danger) 10%, transparent); }
+.jrs-journal-tag[data-tag="mid"] { color: var(--od-accent); background: var(--od-accent-soft); }
+.jrs-journal-tag[data-tag="cn"] { color: var(--od-warn); background: color-mix(in srgb, var(--od-warn) 10%, transparent); }
+
+.jrs-journal-name {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  min-height: 2.4em;
+}
+
+.jrs-journal-match {
+  font-size: 12px;
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.jrs-journal-note {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.jrs-journal-link {
+  font-size: 12px;
+  color: var(--od-accent);
+  text-decoration: none;
+  margin-top: 2px;
+}
+
+.jrs-journal-link:hover { text-decoration: underline; }
+
+.jrs-inline-input {
+  width: 160px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 12px;
+  font-family: inherit;
+}
