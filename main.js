@@ -359,7 +359,7 @@ class DashboardView extends ItemView {
     setIcon(primary.createSpan(), pIcon);
     primary.createSpan({ text: pLabel });
     primary.onclick = async () => {
-      if (this.section === 'discover') { await this.plugin.fetchArxiv(true); this.render(); return; }
+      if (this.section === 'discover') { new Notice('正在抓取 arXiv 最新论文…'); await this.plugin.fetchArxiv(true); this.render(); return; }
       if (this.section === 'progress') { new AiSynthesisModal(this.plugin).open(); return; }
       if (this.section === 'graph') { await this.plugin.generateGraphCanvas(true); this.render(); return; }
       if (this.section === 'reader') { this.continueLastReading(); return; }
@@ -937,6 +937,7 @@ class DashboardView extends ItemView {
       { icon: 'target', label: '投稿冲刺', fn: () => this.goto('submit') },
       { icon: 'bot', label: '知识问答', fn: () => this.goto('ask') },
       { icon: 'inbox', label: '快速记想法', fn: () => new CaptureModal(this.plugin).open() },
+      { icon: 'calendar-check', label: '今日小结', fn: () => this.plugin.generateDailyDigest() },
       { icon: 'pen-line', label: '综述大纲', fn: () => this.plugin.ensureSurveyNote(true) },
       { icon: 'library', label: '文献库', fn: () => this.goto('library') },
       { icon: 'search', label: '全局搜索', fn: () => this.app.commands.executeCommandById('global-search:open') },
@@ -1298,16 +1299,10 @@ class DashboardView extends ItemView {
   /* ========== 区段：知识问答（ima 哲学：你的知识库即 AI 大脑） ========== */
 
   async renderAsk(page) {
-    if (!this._askHistory) this._askHistory = [];
-
     const card = page.createEl('section', { cls: 'jrs-card jrs-ask' });
-    card.createEl('div', { cls: 'jrs-section-heading' }).appendChild(
-      (() => {
-        const h = document.createElement('div');
-        h.createEl('h2', { text: '问你的文献库' });
-        return h;
-      })(),
-    );
+    const head = card.createEl('div', { cls: 'jrs-section-heading' });
+    head.createEl('h2', { text: '问你的文献库' });
+    head.createSpan({ text: '问答自动存档到 科研工作台/AI问答/，重开不丢' });
 
     const inputRow = card.createEl('div', { cls: 'jrs-ask-input' });
     const input = inputRow.createEl('input', { type: 'text', placeholder: '如：网格热力图如何驱动多星调度决策？EJOR 论文常用的基线算法有哪些？' });
@@ -1316,6 +1311,8 @@ class DashboardView extends ItemView {
 
     const list = page.createEl('div', { cls: 'jrs-ask-list' });
 
+    const paperByBasename = (name) => this.plugin.getPapers().find((pp) => pp.file.basename === name);
+
     const renderAnswer = (item) => {
       const block = list.createEl('div', { cls: 'jrs-ask-item od-anim' });
       const q = block.createEl('div', { cls: 'jrs-ask-q' });
@@ -1323,23 +1320,36 @@ class DashboardView extends ItemView {
       q.createSpan({ text: item.q });
       const a = block.createEl('div', { cls: 'jrs-ask-a' });
       MarkdownRenderer.render(this.app, item.a, a, '/', this);
-      /* 来源引用行 */
       if (item.sources?.length) {
         const src = block.createEl('div', { cls: 'jrs-ask-sources' });
         src.createSpan({ cls: 'jrs-ask-sources-label', text: '来源' });
-        item.sources.forEach((p) => {
+        item.sources.forEach((s) => {
           const chip = src.createEl('span', { cls: 'od-chip' });
-          chip.textContent = p.title.length > 26 ? p.title.slice(0, 26) + '…' : p.title;
-          chip.onclick = () => this.plugin.openPaper(p);
+          const paper = s.file ? s : paperByBasename(s.basename || s.title);
+          const label = (paper ? paper.title : (s.title || s.basename || '') || '');
+          chip.textContent = label.length > 26 ? label.slice(0, 26) + '…' : label;
+          if (paper) chip.onclick = () => this.plugin.openPaper(paper);
+          else chip.style.opacity = '0.6';
         });
       }
       const acts = block.createEl('div', { cls: 'jrs-row-actions' });
       const save = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '沉淀为研究问题' });
       save.onclick = async () => {
-        await this.plugin.createQuestion(item.q, item.sources.map((p) => p.file.basename).join(','));
-        const c = await this.plugin.appendAnswerToQuestion(item.q, item.a);
+        const names = item.sources.map((s) => (s.file ? s.file.basename : s.basename)).filter(Boolean);
+        await this.plugin.createQuestion(item.q, names.join(','));
+        await this.plugin.appendAnswerToQuestion(item.q, item.a);
         new Notice('已沉淀到研究问题 ✅');
       };
+    };
+
+    const refreshList = async () => {
+      const items = await this.plugin.getAskLogToday();
+      list.empty();
+      if (!items.length) {
+        list.createEl('div', { cls: 'od-task-empty', text: this.plugin.settings.ai.apiKey ? '问一个你综述里的问题试试，回答会标注引用来源' : '先在 设置 → AI 助手 配置 API Key（DeepSeek 等），即可向自己的文献库提问' });
+        return;
+      }
+      items.slice(0, 8).forEach(renderAnswer);
     };
 
     const ask = async () => {
@@ -1353,11 +1363,10 @@ class DashboardView extends ItemView {
       busy.textContent = '正在检索文献库并生成回答…';
       try {
         const item = await this.plugin.aiAsk(q);
-        this._askHistory.unshift(item);
-        list.empty();
-        this._askHistory.slice(0, 8).forEach(renderAnswer);
+        await this.plugin.appendAskLog(item);
         input.value = '';
         busy.textContent = '';
+        await refreshList();
       } catch (e) {
         busy.textContent = `❌ ${e.message}`;
         new Notice(`问答失败：${e.message}`);
@@ -1367,9 +1376,7 @@ class DashboardView extends ItemView {
     btn.onclick = ask;
     input.onkeydown = (e) => { if (e.key === 'Enter') ask(); };
 
-    if (!this._askHistory.length) {
-      list.createEl('div', { cls: 'od-task-empty', text: this.plugin.settings.ai.apiKey ? '问一个你综述里的问题试试，回答会标注引用来源' : '先在 设置 → AI 助手 配置 API Key（DeepSeek 等），即可向自己的文献库提问' });
-    }
+    await refreshList();
   }
 
   /* ========== 区段：阅读笔记 ========== */
@@ -2156,6 +2163,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       ['sec-ask', '区段：知识问答', () => this.gotoSection('ask')],
       ['new-submission', '新建投稿', () => new AddSubmissionModal(this).open()],
       ['capture', '快速记想法（收件箱）', () => new CaptureModal(this).open()],
+      ['daily-digest', '生成今日小结（写入日记）', () => this.generateDailyDigest()],
       ['add-paper', '添加文献', () => new AddPaperModal(this).open()],
       ['import-pdf', '批量导入 PDF 文件夹', () => new ImportFolderModal(this).open()],
       ['start-pomo', '开始专注（番茄钟）', () => { if (this.pomo.phase === 'idle') this.pomo.start(); }],
@@ -2169,6 +2177,21 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       ['ai-synthesis', 'AI 跨论文综述', () => new AiSynthesisModal(this).open()],
     ];
     cmds.forEach(([id, name, cb]) => this.addCommand({ id, name, callback: cb }));
+    /* 编辑器 AI 三连：命令面板 + 右键菜单 */
+    [['ai-polish', 'AI 学术润色（选中段落）', 'polish', 'wand-2'],
+      ['ai-expand', 'AI 扩写深化（选中段落）', 'expand', 'stretch-horizontal'],
+      ['ai-condense', 'AI 精简提炼（选中段落）', 'condense', 'shrink']].forEach(([id, name, mode, icon]) => {
+      this.addCommand({
+        id, name,
+        editorCallback: (editor) => this.aiEditSelection(editor, mode),
+      });
+    });
+    this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor) => {
+      if (!editor || !editor.getSelection || !editor.getSelection().trim()) return;
+      menu.addItem((mi) => mi.setTitle('AI 学术润色').setIcon('wand-2').onClick(() => this.aiEditSelection(editor, 'polish')));
+      menu.addItem((mi) => mi.setTitle('AI 扩写深化').setIcon('stretch-horizontal').onClick(() => this.aiEditSelection(editor, 'expand')));
+      menu.addItem((mi) => mi.setTitle('AI 精简提炼').setIcon('shrink').onClick(() => this.aiEditSelection(editor, 'condense')));
+    }));
     this.addCommand({
       id: 'ai-active',
       name: 'AI 助手（当前文献笔记）',
@@ -2950,6 +2973,95 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       updated = content.slice(0, at + head.length) + '\n\n' + block + '\n\n' + content.slice(at + head.length).replace(/^\n+/, '');
     }
     await this.app.vault.modify(f, updated);
+    await this.smartOpenFile(f);
+  }
+
+  /* ---------- 问答日志持久化（v0.8） ---------- */
+
+  askLogPath() { return `科研工作台/AI问答/${todayKey()}.md`; }
+
+  async appendAskLog(item) {
+    await this.ensureFolder('科研工作台/AI问答');
+    const path = this.askLogPath();
+    let f = this.app.vault.getAbstractFileByPath(path);
+    if (!(f instanceof TFile)) {
+      f = await this.app.vault.create(path, `# AI 问答 ${todayKey()}\n\n`);
+    }
+    const srcLine = item.sources?.length
+      ? `\n\n来源：${item.sources.map((s) => `[[${s.file.basename}]]`).join('、')}` : '';
+    await this.app.vault.append(f, `\n### Q: ${item.q}\n\n${item.a.trim()}${srcLine}\n`);
+  }
+
+  async getAskLogToday() {
+    const f = this.app.vault.getAbstractFileByPath(this.askLogPath());
+    if (!(f instanceof TFile)) return [];
+    const content = await this.app.vault.cachedRead(f);
+    return content.split(/\n(?=### Q: )/).map((block) => {
+      const qm = block.match(/^### Q: (.+)$/m);
+      if (!qm) return null;
+      const q = qm[1].trim();
+      const body = block.replace(/^### Q: .+$/m, '').trim();
+      const srcMatch = body.match(/^来源：(.+)$/m);
+      const sources = (srcMatch ? srcMatch[1] : '').split(/、/).map((l) => l.replace(/\[\[([^\]|]+).*?\]\]/, '$1').trim()).filter(Boolean)
+        .map((basename) => ({ basename, title: basename }));
+      const a = body.replace(/^来源：.+$/m, '').trim();
+      return { q, a, sources };
+    }).filter(Boolean).reverse();
+  }
+
+  /* ---------- 编辑器 AI 三连（润色/扩写/精简） ---------- */
+
+  async aiEditSelection(editor, mode) {
+    const sel = editor && editor.getSelection ? editor.getSelection() : '';
+    if (!sel || !sel.trim()) {
+      new Notice('请先选中要处理的段落文字');
+      return;
+    }
+    const spec = {
+      polish: ['学术润色', '改写为严谨的学术书面语：术语规范、逻辑连贯、去口语化。保持原意与长度相近，直接输出改写后的文字。'],
+      expand: ['扩写深化', '在保持原意的前提下扩写：补充机理说明、对比视角与过渡句，篇幅约为原文 1.5-2 倍。直接输出扩写后的文字。'],
+      condense: ['精简提炼', '压缩到原篇幅一半以内，保留全部关键论断与术语，删除冗余修饰。直接输出精简后的文字。'],
+    }[mode];
+    new Notice(`${spec[0]}处理中…`);
+    try {
+      const out = await this.aiChat(
+        `你是运筹学/航天领域的学术写作助手。任务：${spec[0]}。要求：${spec[1]} 不要任何解释、前后缀或代码块。`,
+        sel.slice(0, 3000),
+        1600,
+      );
+      const clean = out.trim().replace(/^```[a-z]*\n?|```$/g, '');
+      if (!clean) throw new Error('模型返回为空');
+      editor.replaceSelection(clean);
+      new Notice(`${spec[0]}完成（Ctrl+Z 可撤销）`);
+    } catch (e) {
+      new Notice(`${spec[0]}失败：${e.message}`);
+    }
+  }
+
+  /* ---------- 今日小结（确定性汇总，不耗 AI） ---------- */
+
+  async generateDailyDigest() {
+    const key = todayKey();
+    const log = (this.settings.pomoLog || {})[key] || {};
+    const papers = this.getPapers();
+    const addedToday = papers.filter((p) => window.moment(p.added).format('YYYY-MM-DD') === key);
+    const questions = await this.getQuestions();
+    const subs = this.getSubmissions();
+    const lines = [
+      `- 🍅 专注：${log.count || 0} 个番茄 · ${log.minutes || 0} 分钟`,
+      `- 📚 文献：今日新增 ${addedToday.length} 篇；阅读中 ${papers.filter((p) => p.status === '阅读中').length} · 待读 ${papers.filter((p) => p.status === '待读').length}`,
+      `- ❓ 研究问题：待解答 ${questions.filter((q) => q.status === 'open').length} 个`,
+      `- 🎯 投稿管线：${subs.filter((s) => ['写作中', '准备投稿'].includes(s.status)).length} 篇在写 · ${subs.filter((s) => ['已投', '审稿中', '大修', '小修'].includes(s.status)).length} 篇在审`,
+    ];
+    if (addedToday.length) lines.push(`- 新增：${addedToday.slice(0, 5).map((p) => p.title.slice(0, 18) + '…').join('；')}`);
+    let f = this.findDailyNote();
+    if (!f) {
+      const k = key;
+      f = await this.app.vault.create(this.dailyPath(), `# ${k}\n\n## 今日待办\n\n## 专注记录\n`);
+    }
+    const content = await this.app.vault.cachedRead(f);
+    await this.app.vault.modify(f, replaceSection(content, '今日小结', lines.join('\n')));
+    new Notice('今日小结已写入日记 ✅');
     await this.smartOpenFile(f);
   }
 
