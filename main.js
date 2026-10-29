@@ -1039,7 +1039,7 @@ class DashboardView extends ItemView {
         const acts = card.createEl('div', { cls: 'jrs-row-actions' });
         const add = acts.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '＋ 入库' });
         add.onclick = async () => {
-          add.setDisabled(true);
+          add.disabled = true;
           await this.plugin.arxivToLibrary(it);
           new Notice('已加入文献库 📚');
           add.textContent = '已入库';
@@ -1047,7 +1047,7 @@ class DashboardView extends ItemView {
       });
     };
     btn.onclick = async () => {
-      btn.setDisabled(true);
+      btn.disabled = true;
       btn.textContent = '检索中…';
       try {
         const q = input.value.trim();
@@ -1057,7 +1057,7 @@ class DashboardView extends ItemView {
         const r = await this.plugin.fetchArxiv(true);
         renderResults(r.items.slice(0, n));
       } catch (e) { new Notice(`检索失败：${e.message}`); }
-      btn.setDisabled(false);
+      btn.disabled = false;
       btn.textContent = '检索';
     };
     const cache = this.plugin.settings.arxivCache;
@@ -1169,12 +1169,28 @@ class DashboardView extends ItemView {
       total.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${all.t ? (all.d / all.t) * 100 : 0}%`;
       total.createEl('span', { cls: 'od-hint', text: `总体 ${all.d}/${all.t}` });
       sections.forEach((sec) => {
-        const item = surveyCard.createEl('div', { cls: 'od-progress-item od-clickable' });
-        item.onclick = () => this.plugin.openSurveyNote();
+        const item = surveyCard.createEl('div', { cls: 'od-progress-item' });
         const top = item.createEl('div', { cls: 'od-progress-top' });
-        top.createEl('span', { cls: 'od-progress-name', text: sec.name });
-        top.createEl('span', { cls: 'od-progress-frac', text: `${sec.done}/${sec.total}` });
-        item.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${(sec.done / sec.total) * 100}%`;
+        const nameEl = top.createEl('span', { cls: 'od-progress-name od-clickable', text: sec.name });
+        nameEl.onclick = () => this.plugin.openSurveyNote();
+        const right = top.createEl('span', { cls: 'od-progress-tools' });
+        right.createEl('span', { cls: 'od-progress-frac', text: `${sec.done}/${sec.total}` });
+        const draft = right.createEl('button', { cls: 'od-icon-btn', title: 'AI 起草本章（基于文献库，带来源）' });
+        setIcon(draft, 'sparkles');
+        draft.onclick = async () => {
+          draft.disabled = true;
+          new Notice(`正在为「${sec.name}」起草初稿…`);
+          try {
+            await this.plugin.aiDraftSection(sec.name);
+            new Notice(`「${sec.name}」初稿已写入大纲 ✨`);
+            this.render();
+          } catch (e) {
+            new Notice(`起草失败：${e.message}`);
+            draft.disabled = false;
+          }
+        };
+        const bar = item.createEl('div', { cls: 'od-progressbar' });
+        bar.createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${(sec.done / sec.total) * 100}%`;
       });
       const acts = surveyCard.createEl('div', { cls: 'jrs-row-actions' });
       [['pen-line', '打开大纲', () => this.plugin.openSurveyNote()],
@@ -1202,7 +1218,7 @@ class DashboardView extends ItemView {
       const item = qList.createEl('div', { cls: 'jrs-question-item' });
       const main = item.createEl('div', { cls: 'jrs-row-main' });
       const t = main.createEl('div', { cls: 'jrs-row-title', text: q.question });
-      t.onclick = () => this.app.workspace.getLeaf(false).openFile(q.file);
+      t.onclick = () => this.smartOpenFile(q.file);
       main.createEl('div', { cls: 'od-hint', text: `${q.status === 'answered' ? '✅ 已解答' : '❓ 待解答'} · ${window.moment(q.added).format('M月D日')}` });
       const st = item.createEl('button', { cls: `od-btn od-btn--sm${q.status === 'answered' ? '' : ' od-btn--primary'}` });
       st.textContent = q.status === 'answered' ? '重新打开' : '标记已解答';
@@ -1235,7 +1251,7 @@ class DashboardView extends ItemView {
         const row = g.createEl('div', { cls: 'jrs-paper-row jrs-submit-row' });
         const main = row.createEl('div', { cls: 'jrs-row-main' });
         const t = main.createEl('div', { cls: 'jrs-row-title', text: `${s.title} → ${s.target}` });
-        t.onclick = () => this.app.workspace.getLeaf(false).openFile(s.file);
+        t.onclick = () => this.smartOpenFile(s.file);
         const hint = main.createEl('div', { cls: 'od-hint' });
         let meta = `${s.status} · ${window.moment(s.added).format('M月D日')} 起`;
         if (s.deadline) {
@@ -1249,7 +1265,7 @@ class DashboardView extends ItemView {
         st.title = '点击流转到下一状态';
         st.onclick = async () => { await this.plugin.cycleSubmission(s); this.render(); };
         const open = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '打开' });
-        open.onclick = () => this.app.workspace.getLeaf(false).openFile(s.file);
+        open.onclick = () => this.smartOpenFile(s.file);
       });
     });
 
@@ -1328,8 +1344,12 @@ class DashboardView extends ItemView {
 
     const ask = async () => {
       const q = input.value.trim();
-      if (!q) return;
-      btn.setDisabled(true);
+      if (!q) {
+        new Notice('请输入问题，例如：网格热力图如何驱动多星调度决策？');
+        input.focus();
+        return;
+      }
+      btn.disabled = true;
       busy.textContent = '正在检索文献库并生成回答…';
       try {
         const item = await this.plugin.aiAsk(q);
@@ -1342,7 +1362,7 @@ class DashboardView extends ItemView {
         busy.textContent = `❌ ${e.message}`;
         new Notice(`问答失败：${e.message}`);
       }
-      btn.setDisabled(false);
+      btn.disabled = false;
     };
     btn.onclick = ask;
     input.onkeydown = (e) => { if (e.key === 'Enter') ask(); };
@@ -1852,7 +1872,7 @@ class AiSynthesisModal extends Modal {
       try {
         const f = await this.plugin.aiSynthesis(topic, n, goal);
         busy.textContent = `✅ 已生成：${f.path}`;
-        this.app.workspace.getLeaf(false).openFile(f);
+        this.smartOpenFile(f);
       } catch (e) { busy.textContent = `❌ ${e.message}`; new Notice(`综述失败：${e.message}`); }
       b.setDisabled(false);
     }));
@@ -2240,6 +2260,16 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     }
   }
 
+  /** 智能打开文件：JRS 视图内一律开新标签页，避免吞掉工作台视图 */
+  async smartOpenFile(f) {
+    const ws = this.app.workspace;
+    let cur = null;
+    try { cur = ws.getMostRecentLeaf ? ws.getMostRecentLeaf() : ws.activeLeaf; } catch (e) { cur = null; }
+    const vt = cur && cur.view && cur.view.getViewType ? cur.view.getViewType() : '';
+    if (vt === VIEW_DASHBOARD || vt === VIEW_LIBRARY) await ws.getLeaf('tab').openFile(f);
+    else await ws.getLeaf(false).openFile(f);
+  }
+
   async activateDashboard() {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(VIEW_DASHBOARD);
@@ -2280,7 +2310,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       const k = key || todayKey();
       f = await this.app.vault.create(this.dailyPath(key), `# ${k}\n\n## 今日待办\n\n## 专注记录\n`);
     }
-    await this.app.workspace.getLeaf(false).openFile(f);
+    await this.smartOpenFile(f);
   }
   appendPomoToDaily(minutes) {
     try {
@@ -2432,7 +2462,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '## 可借鉴点', '', '## 疑问与待办', '- [ ] ', '',
     ].join('\n');
     const file = await this.app.vault.create(path, fm + body);
-    if (open) await this.app.workspace.getLeaf(false).openFile(file);
+    if (open) await this.smartOpenFile(file);
     return file;
   }
 
@@ -2444,10 +2474,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   }
   async setPaperRating(p, rating) { await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.rating = rating; }); }
   async setPaperPriority(p, priority) { await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.priority = priority || ''; }); }
-  openPaper(p) { this.app.workspace.getLeaf(false).openFile(p.file); }
+  async openPaper(p) { await this.smartOpenFile(p.file); }
 
   async openReading(p) {
-    await this.app.workspace.getLeaf(false).openFile(p.file);
+    await this.smartOpenFile(p.file);
     const pdf = p.pdf;
     if (!pdf || isHttp(pdf)) { if (isHttp(pdf)) window.open(pdf); return; }
     const f = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
@@ -2461,7 +2491,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (!pdf) return;
     if (isHttp(pdf)) { window.open(pdf); return; }
     const f = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
-    if (f instanceof TFile) { this.app.workspace.getLeaf(false).openFile(f); return; }
+    if (f instanceof TFile) { this.smartOpenFile(f); return; }
     if (isExternalPath(pdf)) {
       try {
         const electron = window.require && window.require('electron');
@@ -2643,7 +2673,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     });
     await this.app.vault.modify(paper.file, c);
     new Notice('AI 摘要已写入 ✨');
-    await this.app.workspace.getLeaf(false).openFile(paper.file);
+    await this.smartOpenFile(paper.file);
   }
 
   async aiGuide(paper) {
@@ -2657,7 +2687,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const m = out.match(/## 导读十问[\s\S]*/);
     await this.app.vault.modify(paper.file, replaceSection(content, '导读十问', (m ? m[0] : out).replace(/^## 导读十问\s*\n/, '')));
     new Notice('导读十问已生成 ❓');
-    await this.app.workspace.getLeaf(false).openFile(paper.file);
+    await this.smartOpenFile(paper.file);
   }
 
   async aiMetadata(paper) {
@@ -2855,6 +2885,74 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     return f;
   }
 
+  /** AI 起草大纲章节：检索文献 → 初稿带来源写回大纲（可重复起草，覆盖旧稿） */
+  async aiDraftSection(sectionName) {
+    if (!this.settings.ai.apiKey) throw new Error('请先在 设置 → AI 助手 配置 API Key');
+    const f = this.app.vault.getAbstractFileByPath(this.settings.surveyNote);
+    if (!(f instanceof TFile)) throw new Error('综述大纲不存在');
+    const content = await this.app.vault.cachedRead(f);
+
+    const lines = content.split('\n');
+    const hIdx = lines.findIndex((l) => l.trim() === `## ${sectionName}`);
+    if (hIdx === -1) throw new Error(`未找到章节：${sectionName}`);
+    let end = lines.length;
+    for (let i = hIdx + 1; i < lines.length; i += 1) { if (/^## /.test(lines[i])) { end = i; break; } }
+    const bullets = lines.slice(hIdx + 1, end).filter((l) => /^\s*- \[/.test(l)).map((l) => l.trim()).join('\n');
+
+    const papers = this.getPapers();
+    if (!papers.length) throw new Error('文献库为空');
+    const segs = sectionName.match(/[\u4e00-\u9fff a-zA-Z0-9]{2,}/g) || [sectionName];
+    const terms = new Set();
+    segs.forEach((seg) => {
+      for (let i = 0; i + 2 <= seg.length; i += 1) terms.add(seg.slice(i, i + 2).toLowerCase());
+    });
+    const scored = papers.map((p) => {
+      let s = 0;
+      const t = p.title.toLowerCase();
+      const sm = (p.summary || '').toLowerCase();
+      const tp = p.topics.join(' ').toLowerCase();
+      terms.forEach((term) => {
+        if (t.includes(term)) s += 3;
+        if (tp.includes(term)) s += 2;
+        if (sm.includes(term)) s += 1;
+      });
+      s += p.rating * 0.3 + (p.priority === '高' ? 1 : 0);
+      return { p, s };
+    }).filter((x) => x.s > 1).sort((a, b) => b.s - a.s).slice(0, 5);
+    const picked = scored.length ? scored.map((x) => x.p) : papers.slice(0, 3);
+    const ctx = picked.map((p, i) => `[${i + 1}] ${p.title}（${p.year || '年份未知'}${p.venue ? ' · ' + p.venue : ''}）${p.summary || p.topics.join('/') || ''}`).join('\n');
+
+    const out = await this.aiChat(
+      '你是运筹学/航天领域的综述写作助理。依据给定文献起草综述章节初稿：中文、学术书面语、2-3 个自然段，关键论断后标注 [n] 来源编号；不要杜撰文献中不存在的内容。只输出 markdown 正文。',
+      `章节标题：${sectionName}\n该章节已有写作要点：\n${bullets || '（暂无）'}\n\n相关文献：\n${ctx}\n\n请起草该章节初稿。`,
+      1600,
+    );
+
+    const startMark = `<!--jrs-draft:${sectionName}-->`;
+    const srcLinks = picked.map((p, i) => `[[${p.file.basename}|${i + 1}]]`).join(' ');
+    const block = [
+      startMark,
+      `> [!NOTE] AI 初稿（${window.moment().format('M月D日 HH:mm')} · 模型 ${this.settings.ai.model}）`,
+      `> 来源：${srcLinks} · 人工审定后并入正文，重复起草将覆盖本块。`,
+      '',
+      out,
+      '<!--/jrs-draft-->',
+    ].join('\n');
+
+    let updated;
+    const existStart = content.indexOf(startMark);
+    if (existStart >= 0) {
+      const existEnd = content.indexOf('<!--/jrs-draft-->', existStart);
+      updated = content.slice(0, existStart) + block + content.slice(existEnd + '<!--/jrs-draft-->'.length);
+    } else {
+      const head = `## ${sectionName}`;
+      const at = content.indexOf(head);
+      updated = content.slice(0, at + head.length) + '\n\n' + block + '\n\n' + content.slice(at + head.length).replace(/^\n+/, '');
+    }
+    await this.app.vault.modify(f, updated);
+    await this.smartOpenFile(f);
+  }
+
   /* ---------- 快速捕获（ima 收藏哲学） ---------- */
 
   async captureThought(text) {
@@ -2985,7 +3083,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   async openGraphCanvas() {
     const f = this.app.vault.getAbstractFileByPath(this.settings.graphCanvas);
-    if (f) await this.app.workspace.getLeaf(false).openFile(f);
+    if (f) await this.smartOpenFile(f);
   }
 
   /* ---------- Bases ---------- */
@@ -3012,7 +3110,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     ]));
     new Notice(`Bases 已生成 → ${dir}/`);
     const f = this.app.vault.getAbstractFileByPath(`${dir}/文献库.base`);
-    if (f) await this.app.workspace.getLeaf(false).openFile(f);
+    if (f) await this.smartOpenFile(f);
   }
 
   /* ---------- 综述 ---------- */
@@ -3035,12 +3133,12 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     await this.ensureFolder(this.settings.surveyNote.split('/').slice(0, -1).join('/'));
     const f = await this.app.vault.create(this.settings.surveyNote, outline);
     new Notice('综述大纲已初始化 ✅');
-    if (open) await this.app.workspace.getLeaf(false).openFile(f);
+    if (open) await this.smartOpenFile(f);
   }
 
   async openSurveyNote() {
     const f = this.app.vault.getAbstractFileByPath(this.settings.surveyNote);
-    if (f) await this.app.workspace.getLeaf(false).openFile(f);
+    if (f) await this.smartOpenFile(f);
   }
 
   async getSurveyProgress() {
@@ -3079,8 +3177,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       rows.join('\n'), '',
     ].join('\n');
     const old = this.app.vault.getAbstractFileByPath(matrixPath);
-    if (old instanceof TFile) { await this.app.vault.modify(old, content); await this.app.workspace.getLeaf(false).openFile(old); }
-    else { await this.app.workspace.getLeaf(false).openFile(await this.app.vault.create(matrixPath, content)); }
+    if (old instanceof TFile) { await this.app.vault.modify(old, content); await this.smartOpenFile(old); }
+    else { await this.smartOpenFile(await this.app.vault.create(matrixPath, content)); }
     new Notice(`文献矩阵已生成（${papers.length} 篇）`);
   }
 };

@@ -2145,3 +2145,14 @@ body.jrs-bg-on .jrs-section-heading h2 {
   letter-spacing: 0.06em;
   color: var(--text-faint);
 }
+
+/* ---------- v0.7：章节行工具位 ---------- */
+.od-progress-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.od-progress-tools .od-icon-btn { padding: 3px; }
+.od-progress-tools .od-icon-btn svg { width: 13px; height: 13px; }
+.od-progress-tools .od-icon-btn:disabled { opacity: 0.4; cursor: default; }

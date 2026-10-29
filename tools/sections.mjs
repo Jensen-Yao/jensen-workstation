@@ -17,7 +17,7 @@ const send = (method, params = {}) => new Promise((resolve) => {
 });
 const { writeFileSync, mkdirSync } = await import('node:fs');
 mkdirSync('F:/OrbitDesk/shots/sections', { recursive: true });
-const sections = ['discover', 'queue', 'library', 'graph', 'progress', 'reader'];
+const sections = ['discover', 'queue', 'library', 'graph', 'progress', 'reader', 'submit', 'ask'];
 for (const sec of sections) {
   await send('Runtime.evaluate', {
     expression: `(async()=>{ const v = app.workspace.getLeavesOfType('jrs-dashboard')[0]?.view; if (v) { await v.goto('${sec}'); } })()`,
