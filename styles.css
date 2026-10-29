@@ -1352,3 +1352,261 @@ body.jrs-bg-on .od-stat-label,
 body.jrs-bg-on .od-pomo-count {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
+
+/* ==========================================================================
+   v0.3 · 自由看板 + Hero + 排版模式 + 外观工作室变量化
+   ========================================================================== */
+
+/* ---------- 外观变量接管（后面规则覆盖前面） ---------- */
+body.od-glass .od-card {
+  background: color-mix(in srgb, var(--background-secondary) var(--od-card-alpha, 100%), transparent);
+  backdrop-filter: blur(var(--od-blur, 18px)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--od-blur, 18px)) saturate(150%);
+}
+
+body:not(.od-glass) .od-card {
+  background: color-mix(in srgb, var(--background-secondary) var(--od-card-alpha, 100%), transparent);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.od-card,
+.od-paper {
+  border-radius: var(--od-radius-l, 16px);
+}
+
+.od-papers,
+.od-grid {
+  gap: var(--od-gap, 14px);
+}
+
+/* 背景暗化：压在照片上的一层（提升文字可读性） */
+body.jrs-bg-on .jrs-view::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, var(--od-bg-dim, 0.3));
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 0;
+}
+
+body.jrs-bg-on .jrs-view > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- Hero 页头（顶部留白 + 大标题） ---------- */
+.jrs-hero {
+  padding: 30px 6px 14px;
+  margin-bottom: 4px;
+}
+
+.jrs-hero-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.jrs-hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.jrs-hero-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: var(--od-accent-soft);
+  color: var(--od-accent);
+}
+
+.jrs-hero-logo svg {
+  width: 22px;
+  height: 22px;
+}
+
+.jrs-hero-name {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-normal);
+}
+
+.jrs-hero-sub {
+  margin-top: 6px;
+  margin-left: 54px;
+  font-size: 13px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
+body.jrs-bg-on .jrs-hero-name,
+body.jrs-bg-on .jrs-hero-sub {
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.jrs-hero-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  margin-left: 54px;
+  flex-wrap: wrap;
+}
+
+.jrs-hero-bar .jrs-omnibox {
+  flex: 1;
+  min-width: 240px;
+  max-width: 560px;
+}
+
+.jrs-edit-toggle.is-on {
+  background: var(--od-accent);
+  color: var(--od-accent-text);
+  border-color: transparent;
+}
+
+/* ---------- 自由看板 ---------- */
+.jrs-board {
+  position: relative;
+  min-height: 480px;
+  margin-top: 10px;
+}
+
+.jrs-card-shell {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  margin: 0 !important;
+  overflow: hidden;
+}
+
+.jrs-card-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jrs-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ---------- 排版模式 ---------- */
+.jrs-board.is-editing .jrs-card-shell {
+  outline: 2px dashed color-mix(in srgb, var(--od-accent) 60%, transparent);
+  outline-offset: 3px;
+}
+
+.jrs-board.is-editing .jrs-card-body {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.88;
+}
+
+.jrs-board.is-editing .od-card-head {
+  cursor: grab;
+}
+
+.jrs-card--lift {
+  z-index: 20;
+  opacity: 0.92;
+  box-shadow: 0 18px 44px -12px rgba(0, 0, 0, 0.45) !important;
+}
+
+.jrs-resize {
+  display: none;
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 15px;
+  height: 15px;
+  cursor: nwse-resize;
+  border-right: 3px solid var(--od-accent);
+  border-bottom: 3px solid var(--od-accent);
+  border-radius: 0 0 5px 0;
+  z-index: 3;
+}
+
+.jrs-board.is-editing .jrs-resize {
+  display: block;
+}
+
+/* ---------- 优先级胶囊 ---------- */
+.od-status.jrs-prio {
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.od-status.jrs-prio[data-prio="高"] {
+  color: var(--od-danger);
+  background: color-mix(in srgb, var(--od-danger) 12%, transparent);
+}
+
+.od-status.jrs-prio[data-prio="中"] {
+  color: var(--od-warn);
+  background: color-mix(in srgb, var(--od-warn) 12%, transparent);
+}
+
+.od-status.jrs-prio[data-prio="低"] {
+  color: var(--od-st-todo);
+  background: color-mix(in srgb, var(--od-st-todo) 12%, transparent);
+}
+
+/* ---------- 搜索框回车提示 ---------- */
+.jrs-omni-kbd {
+  font-size: 10px;
+  color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+/* ---------- 设置页滑杆行 ---------- */
+.jrs-slider-row input[type="text"] {
+  width: 64px;
+  text-align: right;
+}
+
+.jrs-slider-row input[type="number"] {
+  width: 64px;
+}
+
+/* ---------- 文献库标题留白 ---------- */
+.jrs-lib-title {
+  padding-top: 22px;
+}
+
+/* ---------- 减弱动态 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .jrs-card--lift { transition: none; }
+}
+
+/* ---------- v0.3.1：照片背景下的最终可读性保障 ---------- */
+body.jrs-bg-on.od-glass .od-card {
+  background: color-mix(in srgb, var(--background-secondary) calc(var(--od-card-alpha, 80%) + 8%), transparent);
+}
+
+body.jrs-bg-on .od-hint,
+body.jrs-bg-on .od-task-empty,
+body.jrs-bg-on .od-stat-label,
+body.jrs-bg-on .od-bar-label,
+body.jrs-bg-on .od-pomo-count,
+body.jrs-bg-on .od-paper-meta {
+  color: var(--text-normal);
+  opacity: 0.92;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
