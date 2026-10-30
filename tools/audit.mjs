@@ -65,7 +65,7 @@ const DESCRIBE_ONE = `(function(I){
   return JSON.stringify({
     done: false, tag: el.tagName, cls: String(el.className).slice(0, 44),
     text: (el.textContent || '').trim().slice(0, 24),
-    visible: r.width > 0 && r.height > 0,
+    visible: r.width > 0 && r.height > 0 && parseFloat(getComputedStyle(el).opacity || '1') > 0.1,
     skip: (el.getAttribute('title') || '').includes('隐藏卡片'),
     disabled: el.disabled === true || el.hasClass && el.hasClass('is-disabled'),
     connected: el.isConnected,

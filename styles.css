@@ -2350,3 +2350,18 @@ body.jrs-bg-on .jrs-hero-sub { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); }
 
 /* 占位符可读性 */
 .jrs-view input::placeholder { color: var(--text-muted); opacity: 0.85; }
+
+/* ---------- v0.13 · Round2 ---------- */
+.jrs-graph-thumb {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--od-radius-m);
+  padding: 8px;
+  background: color-mix(in srgb, var(--background-primary) 55%, transparent);
+  overflow: hidden;
+}
+.jrs-graph-thumb svg { width: 100%; height: auto; display: block; }
+
+/* 输入框圆角 token 统一 12px */
+.jrs-view input[type="text"],
+.jrs-view input[type="search"],
+.jrs-side-input { border-radius: 12px; }

@@ -388,7 +388,7 @@ class DashboardView extends ItemView {
       shell.appendChild(this.buildSidebar());
     }
     const main = shell.createEl('div', { cls: 'jrs-main' });
-    if (this.section !== 'home') main.appendChild(this.buildTopbar());
+    if (this.section !== 'home') main.appendChild(this.buildTopbar(this.section === 'library'));
 
     this._page = main.createEl('div', { cls: 'jrs-page' });
     await this.renderSection(this._page);
@@ -447,7 +447,7 @@ class DashboardView extends ItemView {
 
   /* ---------- Topbar（对标 OS：标题 + 副标题 + 搜索 + 主按钮） ---------- */
 
-  buildTopbar() {
+  buildTopbar(omitSearch = false) {
     const sec = SECTIONS.find((s) => s.id === this.section) || SECTIONS[0];
     const bar = document.createElement('header');
     bar.className = 'jrs-topbar';
@@ -457,8 +457,10 @@ class DashboardView extends ItemView {
     title.createEl('p', { text: sec.sub });
 
     const tools = bar.createEl('div', { cls: 'jrs-tools' });
-    const omni = tools.createEl('div', { cls: 'jrs-omnibox' });
-    this.buildOmnibox(omni);
+    if (!omitSearch) {
+      const omni = tools.createEl('div', { cls: 'jrs-omnibox' });
+      this.buildOmnibox(omni);
+    }
 
     const primary = tools.createEl('button', { cls: 'od-btn od-btn--primary' });
     let pIcon = 'plus'; let pLabel = '手动添加';
@@ -1298,6 +1300,46 @@ class DashboardView extends ItemView {
     desc.textContent = '生成 Obsidian Canvas：主题节点居中、论文节点按方向环绕，连线表示归属关系。可在画布中自由拖拽编辑。';
     const acts = intro.createEl('div', { cls: 'jrs-row-actions' });
     const exists = !!this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
+    /* 真实图谱缩略预览：读 canvas JSON → SVG */
+    if (exists) {
+      const thumb = intro.createEl('div', { cls: 'jrs-graph-thumb' });
+      try {
+        const f = this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
+        const data = JSON.parse(await this.app.vault.cachedRead(f));
+        const nodes = data.nodes || [];
+        const edges = data.edges || [];
+        if (nodes.length) {
+          const xs = nodes.map((nd) => nd.x); const ys = nodes.map((nd) => nd.y);
+          const minX = Math.min(...xs) - 160; const maxX = Math.max(...xs) + 160;
+          const minY = Math.min(...ys) - 60; const maxY = Math.max(...ys) + 60;
+          const W = 640; const H = Math.max(200, Math.round((W * (maxY - minY)) / (maxX - minX)));
+          const sx = (x) => ((x - minX) / (maxX - minX)) * W;
+          const sy = (y) => ((y - minY) / (maxY - minY)) * H;
+          const nodeById = Object.fromEntries(nodes.map((nd) => [nd.id, nd]));
+          let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+          edges.forEach((e) => {
+            const a = nodeById[e.fromNode]; const b = nodeById[e.toNode];
+            if (!a || !b) return;
+            svg += `<line x1="${sx(a.x + 130)}" y1="${sy(a.y + 30)}" x2="${sx(b.x + 140)}" y2="${sy(b.y + 40)}" stroke="rgba(124,140,180,.28)" stroke-width="1"/>`;
+          });
+          nodes.forEach((nd) => {
+            const isTopic = String(nd.id).startsWith('topic-');
+            const cx = sx(nd.x + (nd.width || 260) / 2); const cy = sy(nd.y + (nd.height || 60) / 2);
+            if (isTopic) {
+              svg += `<rect x="${sx(nd.x)}" y="${sy(nd.y)}" width="${Math.max(40, (nd.width || 260) / (maxX - minX) * W)}" height="${Math.max(16, (nd.height || 60) / (maxY - minY) * H)}" rx="6" fill="rgba(76,125,239,.85)"/>`;
+            } else {
+              svg += `<circle cx="${cx}" cy="${cy}" r="4.5" fill="rgba(120,140,180,.9)"/>`;
+            }
+          });
+          svg += '</svg>';
+          thumb.innerHTML = svg;
+          const cap = intro.createEl('div', { cls: 'od-hint' });
+          cap.textContent = `缩略预览：${nodes.filter((nd) => String(nd.id).startsWith('topic-')).length} 主题节点 · ${nodes.length} 节点 · ${edges.length} 连线（打开图谱可拖拽编辑）`;
+        }
+      } catch (e) {
+        thumb.createEl('div', { cls: 'od-hint', text: `图谱文件解析失败：${e.message}` });
+      }
+    }
     if (exists) {
       const open = acts.createEl('button', { cls: 'od-btn od-btn--primary', text: '打开图谱' });
       open.onclick = () => this.plugin.openGraphCanvas();
@@ -3022,7 +3064,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const topics = this.settings.topics.filter((t) => `${it.title} ${it.summary}`.toLowerCase().includes(t.toLowerCase().slice(0, 4)));
     return this.createPaperNote({
       title: it.title,
-      authors: it.authors,
+      authors: JensenResearchStationPlugin.normalizeAuthors(it.authors),
       year: it.year,
       venue: it.venue,
       status: '待读',
@@ -3050,7 +3092,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const year = it.date ? it.date.slice(0, 4) : '';
     const topics = this.settings.topics.filter((t) => `${it.title} ${it.summary}`.toLowerCase().includes(t.toLowerCase().slice(0, 4)));
     return this.createPaperNote({
-      title: it.title, authors: it.authors, year, venue: 'arXiv',
+      title: it.title, authors: JensenResearchStationPlugin.normalizeAuthors(it.authors), year, venue: 'arXiv',
       status: '待读', topics: topics.slice(0, 3),
       pdf: it.url ? it.url.replace('/abs/', '/pdf/') : '',
     }, false);
