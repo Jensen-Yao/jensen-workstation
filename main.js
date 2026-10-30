@@ -678,9 +678,22 @@ class DashboardView extends ItemView {
   computeMetrics() {
     const s = this.plugin.settings;
     const boardW = this._board ? this._board.clientWidth : 1000;
-    const cols = s.columns; const gap = s.gapPx;
+    const gap = s.gapPx;
+    /* 自适应列数：colW 低于 90px 时自动降列，保底 2 列 */
+    let cols = s.columns;
+    const minColW = 90;
+    const fitCols = Math.max(2, Math.floor((boardW + gap) / (minColW + gap)));
+    if (cols > fitCols) cols = fitCols;
     const colW = Math.max(40, (boardW - (cols - 1) * gap) / cols);
     this._metrics = { cols, colW, rowH: ROW_H, gap, boardW };
+    /* 列数减少后：越界卡重排 */
+    if (cols < s.columns) {
+      for (const def of this.visibleCards()) {
+        const l = this.layoutOf(def.id);
+        if (l.x >= 0 && l.x + Math.min(l.w, cols) > cols) { l.x = -1; l.y = -1; }
+      }
+      this.packLayout();
+    }
   }
 
   positionShell(shell, l) {
@@ -1380,7 +1393,14 @@ class DashboardView extends ItemView {
       const card = grid.createEl('div', { cls: 'jrs-card jrs-topic-card' });
       card.createEl('div', { cls: 'jrs-topic-name', text: t });
       card.createEl('div', { cls: 'jrs-topic-count', text: `${items.length} 篇` });
-      items.slice(0, 3).forEach((p) => card.createEl('div', { cls: 'od-hint', text: '· ' + (p.title.length > 30 ? p.title.slice(0, 30) + '…' : p.title) }));
+      items.slice(0, 3).forEach((p) => {
+        const line = card.createEl('div', { cls: 'od-hint' });
+        line.textContent = '· ' + (p.title.length > 28 ? p.title.slice(0, 28) + '…' : p.title);
+        if (p.authorsShort) {
+          const au = line.createEl('span', { cls: 'jrs-graph-author' });
+          au.textContent = ' — ' + p.authorsShort;
+        }
+      });
       if (!items.length) card.createEl('div', { cls: 'od-hint', text: '暂无论文' });
     });
   }
@@ -1466,7 +1486,7 @@ class DashboardView extends ItemView {
 
   /* ========== 区段：投稿冲刺 ========== */
 
-  renderSubmit(page) {
+  async renderSubmit(page) {
     /* ── 期刊速查器（任意期刊 → CCF/科协/中科院2025/新锐2026/预警）── */
     const qc = page.createEl('section', { cls: 'jrs-card' });
     const qh = qc.createEl('div', { cls: 'jrs-section-heading' });
@@ -1564,6 +1584,20 @@ class DashboardView extends ItemView {
         open.onclick = () => this.plugin.smartOpenFile(s.file);
       });
     });
+
+    /* 今日收件箱（快速捕获的闭环出口） */
+    const inboxItems = await this.plugin.getInboxToday();
+    if (inboxItems.length) {
+      const ib = page.createEl('section', { cls: 'jrs-card' });
+      const ibh = ib.createEl('div', { cls: 'jrs-section-heading' });
+      ibh.createEl('h2', { text: '今日收件箱' });
+      ibh.createSpan({ text: `${inboxItems.length} 条想法待处理` });
+      const openIb = ibh.createEl('button', { cls: 'od-btn od-btn--sm', text: '打开' });
+      openIb.onclick = () => this.plugin.openInboxNote();
+      inboxItems.slice(0, 5).forEach((txt) => {
+        ib.createEl('div', { cls: 'od-hint', text: '· ' + txt.slice(0, 60) });
+      });
+    }
 
     /* 目标期刊速查 */
     const jcard = page.createEl('section', { cls: 'jrs-card' });
@@ -3623,7 +3657,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (!(f instanceof TFile)) {
       f = await this.app.vault.create(path, `# AI 问答 ${todayKey()}\n\n`);
     }
-    const safeA = item.a.trim().replace(/^### /gm, '#### ');
+    const safeA = item.a.trim().replace(/^### /gm, '#### ').replace(/^来源：/gm, '**来源**：');
     const srcLine = item.sources?.length
       ? `
 
@@ -3640,8 +3674,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       if (!qm) return null;
       const q = qm[1].trim();
       const body = block.replace(/^### Q: .+$/m, '').trim();
-      const srcMatch = body.match(/^来源：(.+)$/m);
-      const sources = (srcMatch ? srcMatch[1] : '').split(/、/).map((l) => l.replace(/\[\[([^\]|]+).*?\]\]/, '$1').trim()).filter(Boolean)
+      const srcMatch = body.match(/^来源：(.+)$/gm);  /* 全局匹配取最后一个 */
+      const srcLine = srcMatch ? srcMatch[srcMatch.length - 1] : null;
+      const srcText = srcLine ? srcLine.replace(/^来源：/, '') : '';
+      const sources = srcText.split(/、/).map((l) => l.replace(/\[\[([^\]|]+).*?\]\]/, '$1').trim()).filter(Boolean)
         .map((basename) => ({ basename, title: basename }));
       const a = body.replace(/^来源：.+$/m, '').trim();
       return { q, a, sources };
