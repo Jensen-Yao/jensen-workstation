@@ -1,7 +1,7 @@
 {
   "id": "jensen-workstation",
   "name": "Jensen 科研工作站",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "minAppVersion": "1.5.0",
   "description": "Jensen Research Workstation: card dashboard, literature library with reading queue, arXiv discovery, knowledge Q&A over your own papers, submission tracker, pomodoro & calendar. 科研一体化工作台（中文界面）。",
   "author": "Jensen-Yao",
