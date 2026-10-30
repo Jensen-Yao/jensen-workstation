@@ -1,0 +1,11 @@
+const id = 'jensen-workstation';
+const previous = app.plugins.plugins[id]?.pdfResearch;
+if (previous?._queues) await Promise.allSettled([...previous._queues.values()]);
+await previous?.flushPositions?.();
+await app.plugins.disablePlugin(id);
+app.plugins.manifests[id] = Object.assign({}, app.plugins.manifests[id], JSON.parse(await app.vault.adapter.read(`${app.vault.configDir}/plugins/${id}/manifest.json`)), { dir: `${app.vault.configDir}/plugins/${id}` });
+await app.plugins.enablePlugin(id);
+const plugin = app.plugins.plugins[id];
+if (!plugin) throw new Error('插件未成功载入，请检查 Obsidian 控制台');
+await plugin.activateDashboard();
+return { loaded: !!plugin, version: plugin.manifest.version, assistant: app.workspace.getLeavesOfType('jrs-sidepanel').length, papers: plugin.getPapers().length };

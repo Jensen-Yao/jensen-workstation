@@ -1,5 +1,5 @@
 /* ==========================================================================
- * Jensen 科研工作站 v0.4.0 —— 应用壳层版
+ * Jensen 科研工作站 v0.22.0 —— 分页面工作区、方向标签与 PDF 阅读
  *
  * 本版对标 Research OS 的应用骨架（源码级对齐）：
  *   左侧栏（品牌 + 区段导航 + 库统计）· 区段 Topbar（大标题/副标题/搜索/主按钮）
@@ -15,11 +15,227 @@ const {
   normalizePath, setIcon, requestUrl, MarkdownRenderer,
 } = require('obsidian');
 
+/* BEGIN GENERATED CORE */
+const ResearchCore = (() => {
+// Pure domain logic. tools/build.mjs embeds this module in the distributable main.js.
+const STATUS_VALUES = ['待读', '阅读中', '已完成', '已归档'];
+const QUERY_FIELDS = {
+  status: 'status', 状态: 'status', topic: 'topics', 方向: 'topics',
+  priority: 'priority', 优先级: 'priority', year: 'year', 年份: 'year',
+  rating: 'rating', 评分: 'rating', project: 'project', 项目: 'project',
+  author: 'authors', 作者: 'authors', venue: 'venue', 来源: 'venue',
+  has: 'has', 有: 'has', title: 'title', 标题: 'title',
+};
+
+function normalizeReadingState(status, progress, changedField = '') {
+  let value = Math.max(0, Math.min(100, Number(progress) || 0));
+  let state = STATUS_VALUES.includes(status) ? status : '待读';
+  if (changedField === 'status') {
+    if (state === '待读') value = 0;
+    if (state === '阅读中' && value === 100) value = 0;
+    if (state === '已完成') value = 100;
+  } else if (state !== '已归档') {
+    if (value === 100 || state === '已完成' && changedField !== 'progress') {
+      state = '已完成'; value = 100;
+    } else if (value > 0 || changedField === 'progress' && state === '已完成') {
+      state = '阅读中';
+    }
+  }
+  return { status: state, progress: value };
+}
+
+function parsePaperQuery(query) {
+  const tokens = String(query || '').match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+  return tokens.map((raw) => {
+    const negative = raw.startsWith('-') && raw.length > 1;
+    const token = negative ? raw.slice(1) : raw;
+    const colon = token.search(/[:：]/);
+    const field = colon > 0 ? QUERY_FIELDS[token.slice(0, colon).toLowerCase()] : null;
+    let value = field ? token.slice(colon + 1) : token;
+    value = value.replace(/^["']|["']$/g, '').toLocaleLowerCase();
+    return { field: field || 'text', value, negative };
+  }).filter((token) => token.value);
+}
+
+function numericMatch(actual, expression) {
+  const range = expression.match(/^(\d+)\.\.(\d+)$/);
+  if (range) return Number(actual) >= Number(range[1]) && Number(actual) <= Number(range[2]);
+  const comparison = expression.match(/^(>=|<=|>|<|=)?\s*(\d+(?:\.\d+)?)$/);
+  if (!comparison || actual === '' || actual == null) return false;
+  const left = Number(actual); const right = Number(comparison[2]);
+  if (!Number.isFinite(left)) return false;
+  switch (comparison[1]) {
+    case '>=': return left >= right;
+    case '<=': return left <= right;
+    case '>': return left > right;
+    case '<': return left < right;
+    default: return left === right;
+  }
+}
+
+function matchPaperQuery(paper, query) {
+  const tokens = Array.isArray(query) ? query : parsePaperQuery(query);
+  const contains = (actual, value) => String(actual || '').toLocaleLowerCase().includes(value);
+  return tokens.every(({ field, value, negative }) => {
+    let found;
+    if (field === 'year' || field === 'rating') found = numericMatch(paper[field], value);
+    else if (field === 'has') {
+      found = value === 'pdf' ? !!paper.pdf : value === 'summary' ? !!paper.summary : value === 'project' ? !!paper.project : false;
+    } else if (field === 'text') {
+      found = contains([paper.title, paper.authors, paper.venue, ...(paper.topics || []), paper.summary, paper.project].join(' '), value);
+    } else if (field === 'topics') found = (paper.topics || []).some((topic) => contains(topic, value));
+    else if (field === 'status' || field === 'priority') found = String(paper[field] || '').toLocaleLowerCase() === value;
+    else found = contains(paper[field], value);
+    return negative ? !found : found;
+  });
+}
+
+function packBoardLayout(cards, columns, compact = false) {
+  const cols = Math.max(2, Math.min(12, Math.floor(Number(columns) || 6)));
+  const placed = [];
+  const result = {};
+  const overlaps = (r) => placed.some((p) => r.x < p.x + p.w && r.x + r.w > p.x && r.y < p.y + p.h && r.y + r.h > p.y);
+  for (const card of cards) {
+    const l = card.layout || {};
+    const w = Math.min(cols, Math.max(1, Math.round(Number(l.w) || 2)));
+    const h = Math.min(24, Math.max(1, Math.round(Number(l.h) || 2)));
+    let rect = { x: Math.floor(Number(l.x)), y: Math.floor(Number(l.y)), w, h };
+    if (compact || !Number.isFinite(rect.x) || !Number.isFinite(rect.y) || rect.x < 0 || rect.y < 0 || rect.x + w > cols || rect.y > 500 || overlaps(rect)) {
+      const bottom = placed.reduce((max, p) => Math.max(max, p.y + p.h), 0);
+      search: for (let y = 0; y <= bottom; y++) {
+        for (let x = 0; x <= cols - w; x++) {
+          const candidate = { x, y, w, h };
+          if (!overlaps(candidate)) { rect = candidate; break search; }
+        }
+      }
+    }
+    result[card.id] = rect;
+    placed.push(rect);
+  }
+  return result;
+}
+
+function csvCell(value) {
+  let text = String(value == null ? '' : value);
+  // Treat spreadsheet formulas as text, including values prefixed by whitespace.
+  if (/^[\s\uFEFF]*[=+@-]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function papersToCsv(papers) {
+  const columns = ['标题', '作者', '年份', '期刊/会议', '状态', '优先级', '评分', '阅读进度', '研究方向', '项目', 'DOI', 'PDF', '笔记路径'];
+  const rows = papers.map((p) => [p.title, p.authors, p.year, p.venue, p.status, p.priority, p.rating, p.progress, (p.topics || []).join('; '), p.project, p.doi, p.pdf, p.path]);
+  return '\uFEFF' + [columns, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+function bibEscape(value) {
+  const replacements = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '&': '\\&', '%': '\\%', '$': '\\$', '#': '\\#', '_': '\\_', '~': '\\textasciitilde{}', '^': '\\textasciicircum{}' };
+  return String(value || '').replace(/[\\{}&%$#_~^]/g, (char) => replacements[char]).replace(/[\r\n]+/g, ' ');
+}
+
+function papersToBibtex(papers) {
+  const used = new Set();
+  return papers.map((p, i) => {
+    const base = String(p.authors || 'paper').split(/[,，;；]/)[0].replace(/[^A-Za-z]/g, '').slice(0, 20) || 'paper';
+    const stem = base + (p.year || 'nd');
+    let key = stem; let suffix = 1;
+    while (used.has(key)) key = stem + '_' + suffix++;
+    used.add(key);
+    const fields = [['title', p.title], ['author', String(p.authors || '').split(/[,，;；]/).map((s) => s.trim()).filter(Boolean).join(' and ')],
+      ['year', p.year], ['journal', p.venue], ['doi', p.doi], ['url', p.url || (/^https?:\/\//i.test(p.pdf || '') ? p.pdf : '')],
+      ['keywords', (p.topics || []).join(', ')]];
+    return `@article{${key},\n` + fields.filter(([, value]) => value).map(([name, value]) => `  ${name} = {${bibEscape(value)}}`).join(',\n') + '\n}';
+  }).join('\n\n') + '\n';
+}
+
+function normalizeReadingPosition(record, totalPages) {
+  const input = record && typeof record === 'object' ? record : {};
+  const pages = Math.max(1, Math.floor(Number(totalPages ?? input.pages) || 1));
+  const page = Math.max(1, Math.min(pages, Math.floor(Number(input.page) || 1)));
+  const numericScale = Number(input.scale);
+  const scale = ['auto', 'page-width', 'page-fit'].includes(input.scale) ? input.scale
+    : Number.isFinite(numericScale) && numericScale >= .25 && numericScale <= 5 ? String(numericScale) : 'page-width';
+  return { page, pages, scale, updated: Number(input.updated) || 0 };
+}
+
+function pdfSelectionKey(selection) {
+  return selection?.pdf && selection.text ? `${selection.pdf}\u0000${selection.page}\u0000${selection.anchor ?? ''}\u0000${selection.text}` : '';
+}
+
+function annotationBlock(entry, timestamp = '') {
+  const quote = String(entry.text || '').split('\n').map((line) => '> ' + line).join('\n');
+  const date = timestamp || String(entry.created || '').replace('T', ' ').slice(0, 16);
+  return `<!-- jrs-annotation:${entry.id}:start -->\n### [[${entry.pdf}#page=${entry.page}|第 ${entry.page} 页]]${date ? ' · ' + date : ''}\n\n${quote}\n\n${String(entry.note || '').trim() || '（未添加评论）'}\n\n^${entry.id}\n<!-- jrs-annotation:${entry.id}:end -->`;
+}
+
+function replaceAnnotationBlock(content, id, replacement) {
+  const start = content.indexOf(`<!-- jrs-annotation:${id}:start -->`);
+  const endMarker = `<!-- jrs-annotation:${id}:end -->`;
+  const end = start < 0 ? -1 : content.indexOf(endMarker, start);
+  if (start < 0 || end < 0) return replacement ? content.trimEnd() + '\n\n' + replacement + '\n' : content;
+  return content.slice(0, start) + replacement + content.slice(end + endMarker.length);
+}
+
+function filterAnnotations(entries, query = '', color = '', order = 'page') {
+  const needle = String(query).trim().toLowerCase();
+  return entries.filter((entry) => (!color || entry.color === color) && (!needle || `${entry.text}\n${entry.note || ''}\n第${entry.page}页`.toLowerCase().includes(needle)))
+    .slice().sort((a, b) => order === 'recent' ? String(b.updated || b.created).localeCompare(String(a.updated || a.created)) : a.page - b.page || String(a.created).localeCompare(String(b.created)));
+}
+
+return { normalizeReadingState, parsePaperQuery, matchPaperQuery, packBoardLayout, papersToCsv, papersToBibtex,
+  normalizeReadingPosition, pdfSelectionKey, annotationBlock, replaceAnnotationBlock, filterAnnotations };
+})();
+/* END GENERATED CORE */
+
+// Shared controls keep actions, keyboard behavior and error feedback consistent.
+function uiButton(parent, label, icon, action, cls = 'od-btn') {
+  const button = parent.createEl('button', { cls, attr: { type: 'button' } });
+  if (icon) setIcon(button.createSpan(), icon);
+  if (label) button.createSpan({ text: label });
+  button.onclick = async (event) => {
+    event.stopPropagation();
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await action(event); }
+    catch (error) { console.error('[JRS] 操作失败', error); new Notice(`操作失败：${error.message}`); }
+    finally { button.disabled = false; }
+  };
+  return button;
+}
+
+function uiEmpty(parent, title, description, label, action, icon = 'book-open') {
+  const empty = parent.createEl('div', { cls: 'jrs-empty-state' });
+  setIcon(empty.createEl('div', { cls: 'jrs-empty-icon' }), icon);
+  empty.createEl('h3', { text: title });
+  empty.createEl('p', { text: description });
+  if (label && action) uiButton(empty, label, 'arrow-up-right', action, 'od-btn od-btn--primary');
+  return empty;
+}
+
+function escapeSvgText(value) {
+  return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
+function buildThemeToggle(parent, plugin) {
+  const night = plugin.settings.workspaceTheme === 'night';
+  const button = uiButton(parent, night ? '浅色模式' : '深色模式', night ? 'sun' : 'moon', async () => {
+    plugin.settings.workspaceTheme = plugin.settings.workspaceTheme === 'night' ? 'day' : 'night';
+    await plugin.saveSettings(); plugin.applyAppearance();
+    document.querySelectorAll('[data-jrs-theme-toggle]').forEach((control) => {
+      setIcon(control.firstElementChild, plugin.settings.workspaceTheme === 'night' ? 'sun' : 'moon');
+      control.lastElementChild.textContent = plugin.settings.workspaceTheme === 'night' ? '浅色模式' : '深色模式';
+    });
+  }, 'od-btn od-btn--sm jrs-theme-toggle');
+  button.dataset.jrsThemeToggle = 'true'; button.setAttribute('aria-label', '切换浅色或深色背景'); return button;
+}
+
 /* ---------- 常量 ---------- */
 
 const VIEW_DASHBOARD = 'jrs-dashboard';
 const VIEW_LIBRARY = 'jrs-library';
 const VIEW_SIDE = 'jrs-sidepanel';
+const VIEW_LIFE = 'jrs-life';
+const VIEW_WEB = 'jrs-research-web';
 
 const STATUSES = ['待读', '阅读中', '已完成', '已归档'];
 const PRIORITIES = ['高', '中', '低'];
@@ -34,6 +250,7 @@ const ACCENTS = {
   violet: { name: '星云紫', hex: '#8b5cf6' },
   amber: { name: '暖阳橙', hex: '#d97706' },
   rose: { name: '星尘红', hex: '#e11d48' },
+  emerald: { name: '极光绿', hex: '#2bd9a2' },
 };
 
 const DEFAULT_TOPICS = [
@@ -44,13 +261,13 @@ const DEFAULT_TOPICS = [
 
 /** 区段定义（对标 OS 的 sidebar nav + topbar titles） */
 const SECTIONS = [
-  { id: 'home', icon: 'orbit', label: '总览', title: '总览', sub: '今天的科研节奏，一屏掌握' },
-  { id: 'discover', icon: 'sparkles', label: 'AI 发现', title: 'AI 论文发现', sub: '按关键词检索 arXiv 最新论文，一键入库' },
+  { id: 'home', icon: 'layout-dashboard', label: '总览', title: '总览', sub: '今天的科研节奏，一屏掌握' },
+  { id: 'discover', icon: 'sparkles', label: 'AI 发现', title: 'AI 论文发现', sub: '定制研究方向，发现预印本与正式发表的论文' },
   { id: 'queue', icon: 'list-checks', label: '阅读队列', title: '阅读队列', sub: '明确下一篇，保持阅读节奏' },
   { id: 'library', icon: 'library', label: '文献库', title: '文献库', sub: '收集、搜索、分类与管理阅读状态' },
   { id: 'graph', icon: 'git-fork', label: '论文图谱', title: '论文图谱', sub: '探索论文与研究方向之间的联系' },
   { id: 'progress', icon: 'sprout', label: '研究进展', title: '研究进展', sub: '把读过的论文转化为判断与下一步' },
-  { id: 'reader', icon: 'book-open', label: '阅读笔记', title: '阅读笔记', sub: '分栏精读：笔记 + PDF + AI 助手' },
+  { id: 'reader', icon: 'book-open', label: '阅读笔记', title: '阅读笔记', sub: '续读原文，回顾批注，整理你的研究思考' },
   { id: 'submit', icon: 'target', label: '投稿冲刺', title: '投稿冲刺', sub: '目标期刊速查 · 投稿管线 · 截稿倒计时' },
   { id: 'ask', icon: 'bot', label: '知识问答', title: '知识问答', sub: '基于你的文献库回答，来源可溯源（ima 式）' },
 ];
@@ -103,7 +320,7 @@ const CUSTOM_TYPES = {
 };
 
 const DEFAULT_SETTINGS = {
-  libFolder: '科研工作台/文献',
+  libFolder: '科研工作台/文献', sourceFolder: '',
   pdfFolder: '科研工作台/PDF',
   questionsFolder: '科研工作台/研究问题',
   submissionsFolder: '科研工作台/投稿',
@@ -115,11 +332,14 @@ const DEFAULT_SETTINGS = {
   pomoWork: 25, pomoBreak: 5, pomoLongBreak: 15, pomoLongEvery: 4,
   researchStart: '',
   topics: [...DEFAULT_TOPICS],
+  libraryViewMode: 'list', savedLibraryViews: [], lastReadingPath: '', openAssistantOnDashboard: true, workspaceTheme: 'night', wellnessLog: {}, pdfAnnotations: {}, pdfReadingPositions: {}, deckFilter: 'active', deckMode: '3d', discoveryTags: [], journalDensity: 'compact', boardCollapsed: false, annotationsFolder: '科研工作台/批注',
+  commonLinks: [{ name: 'DeepSeek', url: 'https://chat.deepseek.com/' }, { name: 'ChatGPT', url: 'https://chatgpt.com/' }, { name: 'Google Scholar', url: 'https://scholar.google.com/' }, { name: 'arXiv', url: 'https://arxiv.org/' }],
+  wellnessReminders: { enabled: true, waterMinutes: 60, breakMinutes: 50, startHour: 8, endHour: 22 },
   layout: {},
   hiddenCards: [], customCards: [], cardTitles: {}, cardCfg: {},
   pomoLog: {},
   sidebarMode: 'full', /* full | icon | hidden */
-  accent: 'blue', accentCustom: '', glass: true,
+  accent: 'emerald', accentCustom: '', glass: true,
   blurPx: 18, cardAlpha: 70, radiusPx: 16, gapPx: 14, bgDim: 30, columns: DEFAULT_COLS,
   bgMode: 'image', bgColor: '#e8edf7', bgImage: '',
   arxivQuery: 'all:"satellite scheduling" OR all:"earth observation scheduling"',
@@ -246,131 +466,1540 @@ class PomoEngine {
  * 右侧工具栏：迷你番茄钟 + 期刊速查 + 快速记想法（与主界面共享引擎）
  * ========================================================================== */
 
+/* BEGIN GENERATED ASSISTANT */
+// Contextual research assistant. Embedded in the dependency-free distribution.
 class SidePanelView extends ItemView {
   constructor(leaf, plugin) {
-    super(leaf);
-    this.plugin = plugin;
-    this._unsub = plugin.pomo.onTick(() => this.renderPomoMini());
+    super(leaf); this.plugin = plugin;
+    this.tab = 'paper'; this._captureDraft = ''; this._journalQuery = '';
+    this._pdfDrafts = new Map(); this._pdfTranslations = new Map(); this._pdfSelections = new Map();
   }
-
   getViewType() { return VIEW_SIDE; }
-  getDisplayText() { return 'JRS 工具栏'; }
+  getDisplayText() { return '研究助手'; }
   getIcon() { return 'panel-right'; }
 
-  async onOpen() { this.render(); }
-  onClose() { if (this._unsub) this._unsub(); }
-
-  render() {
-    const root = this.contentEl;
-    root.empty();
-    root.addClass('jrs-side');
-
-    /* ── 迷你番茄钟 ── */
-    const pomoCard = root.createEl('section', { cls: 'jrs-card jrs-side-pomo' });
-    const ph = pomoCard.createEl('div', { cls: 'od-card-title' });
-    setIcon(ph, 'timer');
-    ph.createSpan({ text: '番茄钟' });
-    /* mini ring：与主页同源可视化 */
-    const ringBox = pomoCard.createEl('div', { cls: 'jrs-side-ring' });
-    const C = 2 * Math.PI * 40;
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('viewBox', '0 0 96 96');
-    const mk = (cls) => { const c = document.createElementNS(svgNS, 'circle'); c.setAttribute('class', cls); c.setAttribute('cx','48'); c.setAttribute('cy','48'); c.setAttribute('r','40'); return c; };
-    const track = mk('od-pomo-track');
-    this._miniBar = mk('od-pomo-bar');
-    this._miniBar.setAttribute('stroke-dasharray', String(C));
-    this._miniBar.setAttribute('stroke-dashoffset', '0');
-    this._miniBar.setAttribute('stroke-width', '6');
-    track.setAttribute('stroke-width', '6');
-    svg.appendChild(track); svg.appendChild(this._miniBar);
-    ringBox.appendChild(svg);
-    this._miniClock = ringBox.createEl('div', { cls: 'jrs-side-clock' });
-    this._miniPhase = pomoCard.createEl('div', { cls: 'od-hint' });
-    const pc = pomoCard.createEl('div', { cls: 'jrs-side-pomo-btns' });
-    this._miniStart = pc.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm' });
-    this._miniStart.onclick = () => {
-      const p = this.plugin.pomo;
-      if (p.phase === 'idle') p.start(); else p.reset();
+  async onOpen() {
+    this._closed = false;
+    this.registerEvent(this.app.workspace.on('active-leaf-change', (leaf) => {
+      if (leaf?.view === this) return;
+      if (leaf?.view?.editor && leaf.view.file) this._editorContext = { editor: leaf.view.editor, file: leaf.view.file };
+      this.refreshContext(leaf?.view?.file);
+    }));
+    this.registerEvent(this.app.workspace.on('file-open', (file) => this.refreshContext(file)));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => {
+      if (file.path === this.paper?.path) {
+        window.clearTimeout(this._contextTimer);
+        this._contextTimer = window.setTimeout(() => this.refreshContext(), 160);
+      }
+    }));
+    const captureSelection = (event) => {
+      if (event.target instanceof Element && event.target.closest('.jrs-side')) return;
+      window.clearTimeout(this._selectionTimer);
+      this._selectionTimer = window.setTimeout(() => this.captureSelection(), 100);
     };
-    const resetBtn = pc.createEl('button', { cls: 'od-btn od-btn--sm', text: '重置' });
-    resetBtn.onclick = () => this.plugin.pomo.reset();
-    this._miniCount = pomoCard.createEl('div', { cls: 'od-hint' });
-    this.renderPomoMini();
-
-    /* ── 期刊速查 ── */
-    const jCard = root.createEl('section', { cls: 'jrs-card' });
-    const jh = jCard.createEl('div', { cls: 'od-card-title' });
-    setIcon(jh, 'telescope');
-    jh.createSpan({ text: '期刊速查' });
-    const jInput = jCard.createEl('input', { type: 'text', cls: 'jrs-side-input', attr: { placeholder: '期刊/会议名…' } });
-    const jOut = jCard.createEl('div', { cls: 'jrs-lookup-out' });
-    let deb = null;
-    const badge = (text, cls) => {
-      const b = document.createElement('span');
-      b.className = 'jrs-zone-badge';
-      b.textContent = text;
-      b.setAttribute('data-zone', cls);
-      return b;
-    };
-    const runQ = async () => {
-      const v = jInput.value.trim();
-      jOut.empty();
-      if (!v) return;
-      const r = await this.plugin.lookupJournal(v);
-      if (!r.found) { jOut.createEl('div', { cls: 'od-hint', text: '未收录' }); return; }
-      const row = jOut.createEl('div', { cls: 'jrs-side-badges' });
-      if (r.cas) row.appendChild(badge(`中科院${r.cas}${r.casTop ? '·Top' : ''}`, r.cas.includes('1区') ? 'top' : 'mid'));
-      if (r.xr) row.appendChild(badge(`新锐${r.xr}`, 'cn'));
-      if (r.ccf) row.appendChild(badge(`CCF-${r.ccf.grade}`, 'top'));
-      if (r.cast) row.appendChild(badge(`科协${r.cast}`, r.cast === 'A' || r.cast === 'T1' ? 'top' : 'mid'));
-      if (r.warn) row.appendChild(badge(`${r.warn}`, 'top'));
-      if (!row.children.length) row.appendChild(badge('已收录', 'mid'));
-    };
-    jInput.oninput = () => { if (deb) clearTimeout(deb); deb = setTimeout(runQ, 250); };
-    jInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); if (deb) clearTimeout(deb); runQ(); } };
-
-    /* ── 快速记想法 ── */
-    const cCard = root.createEl('section', { cls: 'jrs-card' });
-    const ch = cCard.createEl('div', { cls: 'od-card-title' });
-    setIcon(ch, 'inbox');
-    ch.createSpan({ text: '快速记想法' });
-    const cInput = cCard.createEl('textarea', { cls: 'jrs-side-input', attr: { rows: '3', placeholder: '记个想法…' } });
-    cInput.style.resize = 'vertical';
-    const cBtn = cCard.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '存入收件箱' });
-    const cHint = cCard.createEl('div', { cls: 'od-hint' });
-    cBtn.onclick = async () => {
-      const v = cInput.value.trim();
-      if (!v) { new Notice('内容为空'); return; }
-      await this.plugin.captureThought(v);
-      cInput.value = '';
-      cHint.textContent = `${window.moment().format('HH:mm')} 已存`;
-      new Notice('已存入今日收件箱');
-    };
-    const inbox = this.plugin.findDailyNote ? null : null;
-    const openInbox = cCard.createEl('button', { cls: 'od-btn od-btn--sm od-btn--ghost', text: '查看收件箱' });
-    openInbox.onclick = () => this.plugin.openInboxNote();
+    this.registerDomEvent(this.app.workspace.containerEl, 'pointerup', captureSelection);
+    this.registerDomEvent(this.app.workspace.containerEl, 'keyup', captureSelection);
+    const active = this.app.workspace.activeLeaf?.view;
+    if (active?.editor && active.file) this._editorContext = { editor: active.editor, file: active.file };
+    this.refreshContext(active?.file, false); this.render();
   }
 
-  renderPomoMini() {
-    if (!this._miniClock) return;
-    const p = this.plugin.pomo;
-    this._miniClock.textContent = p.phase === 'idle'
-      ? `${String(this.plugin.settings.pomoWork).padStart(2, '0')}:00`
-      : p.clockText();
-    if (this._miniBar) {
-      const C = 2 * Math.PI * 40;
-      this._miniBar.setAttribute('stroke-dashoffset', String(C * p.progress));
-      this._miniBar.toggleClass('od-pomo-bar--break', p.phase === 'break' || p.phase === 'longbreak');
+  onClose() {
+    this._closed = true;
+    window.clearTimeout(this._selectionTimer); window.clearTimeout(this._contextTimer); window.clearTimeout(this._lookupTimer);
+  }
+
+  refreshContext(file, render = true) {
+    if (this._closed) return;
+    const papers = this.plugin.getPapers();
+    const current = file || this.app.workspace.activeLeaf?.view?.file;
+    if (current?.extension?.toLowerCase() === 'pdf' && this._pdfDocumentPath !== current.path) this.usePdf(current.path, false);
+    const matched = current && papers.find((paper) => paper.path === current.path || toPosix(paper.pdf) === current.path);
+    const path = matched?.path || this.plugin._contextPaperPath || this.plugin.settings.lastReadingPath;
+    this._paperContextKind = matched ? '当前文献' : current ? '来源目录中的阅读建议' : '已选择文献';
+    this.paper = matched || papers.find((paper) => paper.path === path) || papers.filter((paper) => paper.status === '阅读中').sort((a, b) => b.progress - a.progress)[0] || papers[0] || null;
+    if (render && this._body && (this.tab === 'paper' || this.tab === 'pdf')) this.renderBody();
+    if (this._captureSource) this._captureSource.textContent = this.paper ? `关联文献：${this.paper.title}` : '保存到今日收件箱';
+  }
+
+  setPaper(paper) {
+    this.paper = paper; this.plugin._contextPaperPath = paper.path;
+    this._paperContextKind = '已选择文献';
+    if (this.tab === 'pdf' && paper.pdf && !isHttp(paper.pdf) && !isExternalPath(paper.pdf)) this.usePdf(paper.pdf);
+    if (this.tab === 'paper') this.renderBody();
+    if (this._captureSource) this._captureSource.textContent = `关联文献：${paper.title}`;
+  }
+
+  captureSelection() {
+    const context = this._editorContext;
+    if (!context || !this.editorStillOpen(context)) return;
+    const text = context.editor.getSelection();
+    if (text.trim()) {
+      this._selection = { ...context, text, from: { ...context.editor.getCursor('from') }, to: { ...context.editor.getCursor('to') } };
+      if (this.tab === 'writing' && !this._aiBusy) this.renderBody();
     }
-    this._miniPhase.textContent = `${p.phaseText()} · 今日 ${p.completedToday} 个 / ${this.plugin.todayPomoMinutes()} 分钟`;
-    this._miniStart.textContent = p.phase === 'idle' ? '开始专注' : '停止';
+  }
+
+  editorStillOpen(context) {
+    return this.app.workspace.getLeavesOfType('markdown').some((leaf) => leaf.view.editor === context.editor && leaf.view.file?.path === context.file.path);
+  }
+
+  render() {
+    if (!this._assistantPane) {
+      const surface = this.contentEl; surface.empty(); surface.addClass('jrs-side', 'jrs-side-v2');
+      const switcher = surface.createEl('div', { cls: 'jrs-companion-switch', attr: { role: 'group', 'aria-label': '右侧栏工作模式' } });
+      this._modeButtons = {};
+      [['assistant', 'panel-right', '研究助手'], ['web', 'globe', '研究网页']].forEach(([id, icon, label]) => {
+        this._modeButtons[id] = uiButton(switcher, label, icon, () => id === 'web' ? this._browser ? this.showCompanionMode('web') : this.openWeb('https://chat.deepseek.com/') : this.showCompanionMode('assistant'), 'jrs-companion-mode');
+      });
+      const appearance = buildThemeToggle(switcher, this.plugin); appearance.addClass('jrs-theme-icon');
+      appearance.setAttribute('title', '切换浅色或深色背景');
+      const settings = uiButton(switcher, '', 'settings-2', () => { this.app.setting.open(); this.app.setting.openTabById(this.plugin.manifest.id); }, 'od-icon-btn');
+      settings.setAttribute('aria-label', '研究伴侣设置');
+      this._assistantPane = surface.createEl('div', { cls: 'jrs-companion-pane' });
+      this._webPane = surface.createEl('div', { cls: 'jrs-companion-pane jrs-web-pane' }); this._webPane.hidden = true;
+    }
+    const root = this._assistantPane; root.empty();
+    const tabs = root.createEl('div', { cls: 'jrs-assistant-tabs', attr: { role: 'group', 'aria-label': '研究助手模式' } });
+    [['paper', 'book-open', '文献'], ['pdf', 'highlighter', '批注'], ['writing', 'pen-line', '写作'], ['tools', 'grid-2x2', '工具']].forEach(([id, icon, label]) => {
+      const button = uiButton(tabs, label, icon, () => { this.tab = id; this.render(); }, `jrs-assistant-tab${this.tab === id ? ' is-active' : ''}`);
+      button.setAttribute('aria-pressed', String(this.tab === id));
+    });
+    const dock = root.createEl('div', { cls: 'jrs-link-dock' });
+    this.plugin.settings.commonLinks.slice(0, 3).forEach((link) => uiButton(dock, link.name, 'external-link', () => this.plugin.openResearchWeb(link.url), 'jrs-link-chip'));
+    this._body = root.createEl('div', { cls: 'jrs-assistant-body' }); this.renderBody();
+    this.renderCapture(root);
+    this.showCompanionMode(this.companionMode || 'assistant');
+  }
+
+  showCompanionMode(mode) {
+    this.companionMode = mode;
+    this._assistantPane.hidden = mode !== 'assistant'; this._webPane.hidden = mode !== 'web';
+    for (const [id, button] of Object.entries(this._modeButtons)) { button.classList.toggle('is-active', id === mode); button.setAttribute('aria-pressed', String(id === mode)); }
+  }
+
+  async openWeb(address) {
+    if (!this._assistantPane) this.render();
+    if (!this._browser) this._browser = new ResearchBrowserPanel(this, this._webPane, address);
+    else this._browser.navigate(address);
+    this.showCompanionMode('web');
+  }
+
+  refreshLinks() { this.render(); this._browser?.refreshLinks(); }
+
+  renderBody() {
+    if (!this._body || this._closed) return;
+    this._pdfUi = null; this._paperPosition = null; this._body.empty();
+    if (this.tab === 'paper') this.renderPaper();
+    else if (this.tab === 'pdf') this.renderPdf();
+    else if (this.tab === 'writing') this.renderWriting();
+    else this.renderTools();
+  }
+
+  rememberPdfDraft() {
+    const selection = this._pdfSelection;
+    const key = ResearchCore.pdfSelectionKey(selection);
+    if (key) this._pdfDrafts.set(key, this._annotationDraft || '');
+    while (this._pdfDrafts.size > 20) this._pdfDrafts.delete(this._pdfDrafts.keys().next().value);
+  }
+
+  finishSavedSelection(selection) {
+    const key = ResearchCore.pdfSelectionKey(selection);
+    this._pdfDrafts.delete(key);
+    if (ResearchCore.pdfSelectionKey(this._pdfSelections.get(selection.pdf)) === key) this._pdfSelections.delete(selection.pdf);
+    if (ResearchCore.pdfSelectionKey(this._pdfSelection) === key) { this._pdfSelection = null; this._annotationDraft = ''; }
+    if (ResearchCore.pdfSelectionKey(this.plugin.pdfResearch.selection) === key) this.plugin.pdfResearch.selection = null;
+  }
+
+  usePdf(path, render = true) {
+    if (this._pdfDocumentPath === path) return;
+    this.rememberPdfDraft(); this._pdfDocumentPath = path;
+    this._pdfSelection = this._pdfSelections.get(path) || null;
+    const key = ResearchCore.pdfSelectionKey(this._pdfSelection);
+    this._annotationDraft = this._pdfDrafts.get(key) || ''; this._pdfTranslation = this._pdfTranslations.get(key) || null; this._pdfError = '';
+    this._annotationLimit = 20;
+    if (render && this.tab === 'pdf') this.renderBody();
+  }
+
+  setPdfSelection(selection) {
+    const key = ResearchCore.pdfSelectionKey(selection);
+    if (key === ResearchCore.pdfSelectionKey(this._pdfSelection)) return;
+    this.rememberPdfDraft(); this._pdfDocumentPath = selection.pdf;
+    this._pdfSelections.set(selection.pdf, selection);
+    while (this._pdfSelections.size > 20) this._pdfSelections.delete(this._pdfSelections.keys().next().value);
+    this._pdfSelection = selection; this._pdfTranslation = this._pdfTranslations.get(key) || null; this.tab = 'pdf';
+    this.companionMode = 'assistant';
+    this._annotationDraft = this._pdfDrafts.get(key) || ''; this._pdfError = ''; this.render();
+  }
+
+  onPdfPosition(pdf, position) {
+    if (this._paperPosition?.pdf === pdf) this._paperPosition.element.textContent = `上次读至第 ${position.page} / ${position.pages} 页`;
+    const ui = this._pdfUi; if (!ui || ui.pdf !== pdf) return;
+    if (document.activeElement !== ui.page) ui.page.value = String(position.page);
+    ui.total.textContent = `/ ${position.pages}`;
+    ui.previous.disabled = position.page <= 1; ui.next.disabled = position.page >= position.pages;
+    if (document.activeElement !== ui.zoom) {
+      if (![...ui.zoom.options].some((option) => option.value === position.scale)) ui.zoom.createEl('option', { value: position.scale, text: `${Math.round(Number(position.scale) * 100)}%` });
+      ui.zoom.value = position.scale;
+    }
+  }
+
+  renderPdf() {
+    const host = this._body;
+    const research = this.plugin.pdfResearch;
+    const context = research.activeContext();
+    const candidate = this._pdfSelection || research.selection;
+    const pdf = this._pdfDocumentPath || candidate?.pdf || context?.file.path || (this.paper?.pdf && !isHttp(this.paper.pdf) && !isExternalPath(this.paper.pdf) ? this.paper.pdf : '');
+    this._pdfDocumentPath = pdf;
+    const selection = candidate?.pdf === pdf ? candidate : null;
+    const section = host.createEl('section', { cls: 'jrs-pdf-panel' });
+    section.createEl('div', { cls: 'jrs-assistant-section-title', text: 'PDF 阅读 · 批注 · 翻译' });
+    if (!pdf) {
+      uiEmpty(section, '把阅读和理解连在一起', '在文献库打开 PDF，选中原文即可高亮、批注和翻译。', '选择文献', () => this.plugin.gotoSection('library'), 'highlighter'); return;
+    }
+    const title = section.createEl('div', { cls: 'jrs-pdf-document-title', text: pdf.split('/').pop() }); title.title = pdf;
+    const controls = section.createEl('div', { cls: 'jrs-pdf-page-controls' });
+    const currentPage = context?.file.path === pdf ? context.page : selection?.page || 1;
+    const previous = uiButton(controls, '', 'chevron-left', () => research.jump(pdf, Math.max(1, Number(pageInput.value) - 1)), 'od-icon-btn'); previous.setAttribute('aria-label', 'PDF 上一页');
+    const pageInput = controls.createEl('input', { type: 'number', attr: { min: '1', 'aria-label': '跳转 PDF 页码' } }); pageInput.value = String(currentPage);
+    pageInput.onkeydown = async (event) => { if (event.key === 'Enter') { try { await research.jump(pdf, Math.max(1, Number(pageInput.value) || 1)); } catch (error) { new Notice(error.message); } } };
+    const total = controls.createSpan({ cls: 'od-hint', text: context?.file.path === pdf ? `/ ${context.pages}` : '页' });
+    const next = uiButton(controls, '', 'chevron-right', () => research.jump(pdf, Number(pageInput.value) + 1), 'od-icon-btn'); next.setAttribute('aria-label', 'PDF 下一页');
+    const zoom = controls.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': 'PDF 缩放方式' } });
+    [['page-width', '适合宽度'], ['page-fit', '适合整页'], ['1', '100%'], ['1.5', '150%']].forEach(([value, text]) => zoom.createEl('option', { value, text }));
+    zoom.onchange = () => { const live = research.activeContext(); if (live?.file.path === pdf && live.viewer) live.viewer.currentScaleValue = zoom.value; else new Notice('先打开此 PDF 再调整缩放'); };
+    this._pdfUi = { pdf, page: pageInput, total, previous, next, zoom };
+    this.onPdfPosition(pdf, context?.file.path === pdf ? { page: context.page, pages: context.pages, scale: String(context.viewer?.currentScaleValue || 'page-width') } : research.readingPosition(pdf) || { page: currentPage, pages: currentPage, scale: 'page-width' });
+    if (selection) {
+      section.createEl('div', { cls: 'jrs-assistant-section-title', text: `已捕获第 ${selection.page} 页 · ${selection.text.length} 字符` });
+      section.createEl('blockquote', { cls: 'jrs-selection-preview', text: selection.text });
+      const note = section.createEl('textarea', { cls: 'jrs-side-input', attr: { rows: '2', placeholder: '这段内容对我的研究有什么启发？', 'aria-label': 'PDF 批注内容' } });
+      note.value = this._annotationDraft || ''; note.oninput = () => { this._annotationDraft = note.value; this.rememberPdfDraft(); };
+      const colors = section.createEl('div', { cls: 'jrs-highlight-colors', attr: { role: 'group', 'aria-label': '高亮颜色' } });
+      [['mint', '薄荷绿'], ['amber', '琥珀黄'], ['violet', '紫罗兰']].forEach(([color, label]) => {
+        const swatch = uiButton(colors, '', '', () => { this._annotationColor = color; this.renderBody(); }, 'jrs-highlight-color');
+        swatch.style.setProperty('--mark-color', PDF_MARK_COLORS[color]); swatch.setAttribute('aria-label', label);
+        swatch.setAttribute('aria-pressed', String((this._annotationColor || 'mint') === color));
+      });
+      const actions = section.createEl('div', { cls: 'jrs-assistant-actions' });
+      uiButton(actions, '保存高亮批注', 'highlighter', async () => {
+        await research.save(selection, note.value, this._annotationColor || 'mint');
+        this.finishSavedSelection(selection); this.renderBody(); new Notice('批注与页码已保存，高亮会随 PDF 恢复');
+      }, 'od-btn od-btn--primary od-btn--sm');
+      uiButton(actions, '翻译选区', 'languages', () => this.translatePdfSelection(selection), 'od-btn od-btn--sm').disabled = !!this._pdfTranslating;
+      uiButton(actions, '复制原文', 'copy', () => navigator.clipboard.writeText(selection.text), 'od-btn od-btn--sm');
+      uiButton(actions, '复制并问 DeepSeek', 'external-link', async () => {
+        await navigator.clipboard.writeText(`请帮我解释或翻译以下论文内容，并指出研究启发：\n\n${selection.text}\n\n来源：${pdf.split('/').pop()}，第 ${selection.page} 页`);
+        await this.plugin.openResearchWeb('https://chat.deepseek.com/'); new Notice('选区与页码已复制，在 DeepSeek 粘贴即可提问');
+      }, 'od-btn od-btn--sm');
+    } else {
+      section.createEl('p', { cls: 'od-hint', text: '在 PDF 中拖选文字，选区会自动出现在这里。高亮保存在工作站中，摘录与批注同步写入 Markdown。' });
+      uiButton(section, '打开 PDF', 'book-open-text', () => research.jump(pdf, currentPage), 'od-btn od-btn--sm');
+    }
+    if (this._pdfTranslating) section.createEl('div', { cls: 'jrs-assistant-status', text: '正在翻译选区…', attr: { 'aria-live': 'polite' } });
+    if (this._pdfError) section.createEl('p', { cls: 'jrs-assistant-error', text: this._pdfError });
+    if (this._pdfTranslation) {
+      const result = this._pdfTranslation;
+      const translated = host.createEl('section', { cls: 'jrs-writing-result' });
+      translated.createEl('div', { cls: 'jrs-assistant-section-title', text: '学术译文' });
+      const output = translated.createEl('div', { cls: 'jrs-writing-output' }); MarkdownRenderer.renderMarkdown(result.text, output, '', this);
+      const actions = translated.createEl('div', { cls: 'jrs-capture-actions' });
+      uiButton(actions, '保存原文与译文', 'save', async () => {
+        await research.save(result.selection, '译文：\n\n' + result.text, this._annotationColor || 'mint');
+        const key = ResearchCore.pdfSelectionKey(result.selection); this._pdfTranslations.delete(key);
+        if (ResearchCore.pdfSelectionKey(this._pdfTranslation?.selection) === key) this._pdfTranslation = null;
+        this.renderBody(); new Notice('原文与译文已保存到 PDF 批注笔记');
+      }, 'od-btn od-btn--primary od-btn--sm');
+      uiButton(actions, '复制译文', 'copy', () => navigator.clipboard.writeText(result.text), 'od-btn od-btn--sm');
+    }
+    this.renderAnnotationHistory(host, pdf);
+  }
+
+  renderAnnotationHistory(host, pdf) {
+    const research = this.plugin.pdfResearch;
+    const history = host.createEl('section', { cls: 'jrs-pdf-annotation-history' });
+    const heading = history.createEl('div', { cls: 'jrs-assistant-section-title' });
+    const count = heading.createSpan();
+    const actions = heading.createEl('div', { cls: 'jrs-annotation-heading-actions' });
+    const undo = uiButton(actions, '撤销删除', 'undo-2', async () => { await research.undoDelete(pdf); draw(); }, 'jrs-text-button');
+    uiButton(actions, '笔记', 'file-text', async () => {
+      const file = this.app.vault.getAbstractFileByPath(research.notePath(pdf));
+      if (file) await this.plugin.smartOpenFile(file); else new Notice('保存第一条批注后会建立批注笔记');
+    }, 'jrs-text-button');
+    const controls = history.createEl('div', { cls: 'jrs-annotation-filters' });
+    const search = controls.createEl('input', { type: 'search', cls: 'jrs-side-input', attr: { 'aria-label': '搜索批注原文或评论', placeholder: '搜索原文、评论或页码…' } }); search.value = this._annotationQuery || '';
+    const color = controls.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '按高亮颜色筛选' } });
+    [['', '全部颜色'], ['mint', '薄荷绿'], ['amber', '琥珀黄'], ['violet', '紫罗兰']].forEach(([value, text]) => color.createEl('option', { value, text })); color.value = this._annotationFilter || '';
+    const order = controls.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '批注排序' } });
+    [['page', '按页码'], ['recent', '最近修改']].forEach(([value, text]) => order.createEl('option', { value, text })); order.value = this._annotationOrder || 'page';
+    const list = history.createEl('div', { cls: 'jrs-annotation-list' });
+    const draw = () => {
+      list.empty();
+      const all = research.annotations(pdf);
+      const entries = ResearchCore.filterAnnotations(all, this._annotationQuery, this._annotationFilter, this._annotationOrder);
+      count.textContent = `阅读批注 · ${entries.length}${entries.length !== all.length ? ' / ' + all.length : ''}`;
+      undo.hidden = !research.canUndoDelete(pdf);
+      if (!all.length) { list.createEl('p', { cls: 'od-hint', text: '选中 PDF 原文后，可以把论据、疑问与译文留在这里。' }); return; }
+      if (!entries.length) { list.createEl('p', { cls: 'od-hint', text: '没有匹配的批注，试试其他关键词或颜色。' }); return; }
+      entries.slice(0, this._annotationLimit || 20).forEach((entry) => {
+        const item = list.createEl('article', { cls: 'jrs-pdf-annotation-item' }); item.dataset.annotationId = entry.id; item.style.setProperty('--mark-color', PDF_MARK_COLORS[entry.color]);
+        const top = item.createEl('div', { cls: 'jrs-assistant-section-title' });
+        uiButton(top, `第 ${entry.page} 页`, 'arrow-up-right', () => research.jump(pdf, entry.page), 'jrs-text-button');
+        const tools = top.createEl('div', { cls: 'jrs-annotation-item-actions' });
+        const edit = uiButton(tools, '', 'pencil', () => new EditAnnotationModal(this.plugin, pdf, entry, draw).open(), 'od-icon-btn'); edit.setAttribute('aria-label', '编辑这条批注'); edit.title = '编辑批注';
+        const copy = uiButton(tools, '', 'copy', () => navigator.clipboard.writeText(`[[${pdf}#page=${entry.page}|第 ${entry.page} 页]]\n\n${entry.text}${entry.note ? '\n\n' + entry.note : ''}`), 'od-icon-btn'); copy.setAttribute('aria-label', '复制批注与页码引用'); copy.title = '复制原文、评论和页码';
+        const remove = uiButton(tools, '', 'trash-2', async () => { await research.remove(pdf, entry.id); draw(); }, 'od-icon-btn'); remove.setAttribute('aria-label', '删除这条批注'); remove.title = '删除后可撤销';
+        item.createEl('blockquote', { text: entry.text });
+        if (entry.note) item.createEl('p', { text: entry.note });
+        const foot = item.createEl('div', { cls: 'jrs-annotation-item-foot' });
+        foot.createSpan({ text: window.moment(entry.updated || entry.created).format('M月D日 HH:mm') });
+        uiButton(foot, '展开', 'chevrons-up-down', (event) => {
+          const expanded = item.classList.toggle('is-expanded'); event.currentTarget.lastElementChild.textContent = expanded ? '收起' : '展开';
+        }, 'jrs-text-button');
+      });
+      if (entries.length > (this._annotationLimit || 20)) uiButton(list, `再显示 ${Math.min(20, entries.length - (this._annotationLimit || 20))} 条`, 'chevrons-down', () => { this._annotationLimit = (this._annotationLimit || 20) + 20; draw(); }, 'od-btn od-btn--sm');
+    };
+    const filter = () => { this._annotationQuery = search.value; this._annotationFilter = color.value; this._annotationOrder = order.value; this._annotationLimit = 20; draw(); };
+    search.oninput = filter; color.onchange = filter; order.onchange = filter; draw();
+  }
+
+  async translatePdfSelection(selection) {
+    if (this._pdfTranslating) return;
+    if (selection.text.length > 8000) { new Notice('选区超过 8000 字符，请分段翻译'); return; }
+    this._pdfTranslating = true; this._pdfError = ''; this.renderBody();
+    try {
+      const text = await this.plugin.aiChat('你是运筹学与航天领域的学术翻译。将原文翻译为简体中文；如果原文以中文为主，则翻译为学术英语。保留公式、引用编号、专有名词和段落结构。不编造信息，只输出译文。', selection.text, 2600);
+      const key = ResearchCore.pdfSelectionKey(selection); const result = { text, selection };
+      this._pdfTranslations.set(key, result);
+      while (this._pdfTranslations.size > 20) this._pdfTranslations.delete(this._pdfTranslations.keys().next().value);
+      if (ResearchCore.pdfSelectionKey(this._pdfSelection || this.plugin.pdfResearch.selection) === key && this._pdfDocumentPath === selection.pdf) this._pdfTranslation = result;
+    } catch (error) {
+      if (ResearchCore.pdfSelectionKey(this._pdfSelection || this.plugin.pdfResearch.selection) === ResearchCore.pdfSelectionKey(selection) && this._pdfDocumentPath === selection.pdf) this._pdfError = error.message;
+      else new Notice(`第 ${selection.page} 页选区翻译失败：${error.message}`);
+    }
+    finally { this._pdfTranslating = false; if (!this._closed && this.tab === 'pdf') this.renderBody(); }
+  }
+
+  renderPaper() {
+    const host = this._body;
+    const paper = this.paper;
+    if (!paper) {
+      uiEmpty(host, '让助手跟上你的阅读', '打开一篇文献笔记或 PDF，这里会显示精读操作和相关文献。', '前往文献库', () => this.plugin.gotoSection('library'), 'scan-text');
+      return;
+    }
+    const card = host.createEl('section', { cls: 'jrs-assistant-paper' });
+    const caption = card.createEl('div', { cls: 'jrs-assistant-section-title' });
+    caption.createSpan({ text: this._paperContextKind || '当前文献' });
+    const state = caption.createEl('span', { cls: 'od-status', text: paper.status }); state.dataset.status = paper.status;
+    const title = uiButton(card, paper.title, '', () => this.plugin.openReading(paper), 'jrs-assistant-paper-title'); title.title = `${paper.pdf ? '阅读 PDF' : '打开笔记'}：${paper.title}`;
+    card.createEl('div', { cls: 'od-hint', text: [paper.year, paper.authorsShort, paper.venue].filter(Boolean).join(' · ') || '打开笔记补充文献信息' });
+    const position = this.plugin.pdfResearch.readingPosition(paper.pdf);
+    const location = card.createEl('div', { cls: 'jrs-reader-location', text: position ? `上次读至第 ${position.page} / ${position.pages} 页` : '阅读位置会自动保存' });
+    this._paperPosition = { pdf: paper.pdf, element: location };
+    const zone = this.plugin.zoneOf(paper.venue); const badge = zone && this.plugin.zoneBadge(zone); if (badge) card.appendChild(badge);
+    const progress = card.createEl('div', { cls: 'jrs-assistant-progress' });
+    progress.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${paper.progress}%`;
+    progress.createSpan({ text: `${paper.progress}%` });
+    const advance = uiButton(progress, '+25%', '', async () => { await this.plugin.bumpProgress(paper, 25); this.refreshContext(); }, 'jrs-text-button');
+    advance.disabled = paper.progress >= 100; advance.title = '推进阅读进度';
+    const actions = card.createEl('div', { cls: 'jrs-assistant-actions' });
+    uiButton(actions, '文献笔记', 'file-text', () => this.plugin.openPaper(paper), 'od-btn od-btn--sm');
+    const pdf = uiButton(actions, position ? '继续 PDF' : '阅读 PDF', 'book-open', () => this.plugin.openReading(paper), 'od-btn od-btn--sm'); pdf.disabled = !paper.pdf;
+    uiButton(actions, '分栏阅读', 'columns-2', () => this.plugin.openReading(paper, { split: true }), 'od-btn od-btn--sm').disabled = !paper.pdf;
+    uiButton(actions, '结构化摘要', 'scan-text', () => this.runPaperAI('摘要', () => this.plugin.aiSummarize(paper)), 'od-btn od-btn--sm').disabled = !!this._aiBusy;
+    uiButton(actions, '导读十问', 'list-checks', () => this.runPaperAI('导读十问', () => this.plugin.aiGuide(paper)), 'od-btn od-btn--sm').disabled = !!this._aiBusy;
+    if (this._paperAIStatus && this._paperAIPath === paper.path) card.createEl('div', { cls: 'jrs-assistant-status', text: this._paperAIStatus, attr: { 'aria-live': 'polite' } });
+    if (paper.topics.length) {
+      const chips = card.createEl('div', { cls: 'od-chips' });
+      paper.topics.slice(0, 4).forEach((topic) => chips.createSpan({ cls: 'od-chip', text: topic }));
+    }
+    this.renderRelated(host, paper);
+  }
+
+  async runPaperAI(label, run) {
+    if (this._aiBusy) return;
+    this._aiBusy = true; this._paperAIPath = this.paper?.path; this._paperAIStatus = `正在生成${label}…`; this.renderBody();
+    try { await run(); this._paperAIStatus = `${label}已写入文献笔记`; }
+    catch (error) { this._paperAIStatus = `${label}失败：${error.message}`; }
+    finally { this._aiBusy = false; if (!this._closed) { this.refreshContext(null, false); this.renderBody(); } }
+  }
+
+  renderRelated(host, paper, text = '') {
+    const section = host.createEl('section', { cls: 'jrs-related-papers' });
+    const heading = section.createEl('div', { cls: 'jrs-assistant-section-title' });
+    heading.createSpan({ text: text ? '段落引用建议' : '相关文献' });
+    heading.createSpan({ cls: 'od-hint', text: text ? '关键词与方向匹配' : '共同方向与项目' });
+    const related = this.plugin.relatedPapers(paper, text);
+    if (!related.length) { section.createEl('p', { cls: 'od-hint', text: '为文献添加研究方向或项目后，这里会出现关联线索。' }); return; }
+    related.slice(0, 4).forEach(({ paper: candidate, shared }) => {
+      const row = section.createEl('article', { cls: 'jrs-related-paper' });
+      const title = uiButton(row, candidate.title, '', () => this.plugin.openPaper(candidate), 'jrs-related-title'); title.title = candidate.title;
+      row.createEl('div', { cls: 'od-hint', text: [candidate.year, ...shared.slice(0, 2)].filter(Boolean).join(' · ') || candidate.venue || '匹配当前段落' });
+      uiButton(row, this._editorContext && this.editorStillOpen(this._editorContext) ? '插入引用' : '复制引用', 'link', () => this.insertCitation(candidate), 'jrs-text-button');
+    });
+  }
+
+  async insertCitation(paper) {
+    const alias = paper.title.replace(/[\[\]|\r\n]/g, ' ');
+    const link = `[[${paper.path.replace(/\.md$/, '')}|${alias}]]`;
+    const context = this._editorContext;
+    if (context && this.editorStillOpen(context)) {
+      context.editor.replaceRange(link, context.editor.getCursor('to'));
+      new Notice(`引用已插入「${context.file.basename}」`);
+    } else { await navigator.clipboard.writeText(link); new Notice('文献引用已复制'); }
+  }
+
+  renderWriting() {
+    const host = this._body;
+    const selection = this._selection;
+    const intro = host.createEl('section', { cls: 'jrs-writing-context' });
+    const caption = intro.createEl('div', { cls: 'jrs-assistant-section-title' });
+    caption.createSpan({ text: '选区写作' });
+    if (selection) {
+      caption.createSpan({ cls: 'od-hint', text: `${selection.text.length} 字符` });
+      intro.createEl('div', { cls: 'jrs-selection-source', text: selection.file.basename });
+      intro.createEl('blockquote', { cls: 'jrs-selection-preview', text: selection.text });
+    } else {
+      intro.createEl('p', { cls: 'od-hint', text: '在笔记编辑器中选中一段文字。助手会保留选区，先生成预览，再由你决定如何采用。' });
+    }
+    const actions = intro.createEl('div', { cls: 'jrs-writing-actions' });
+    [['polish', '学术润色', 'wand-2'], ['expand', '扩写深化', 'text-cursor-input'], ['condense', '精简提炼', 'align-left'], ['continue', '续写段落', 'pen-line']].forEach(([mode, label, icon]) => {
+      const button = uiButton(actions, label, icon, () => this.previewWriting(mode), 'od-btn od-btn--sm');
+      button.disabled = !selection || !!this._aiBusy;
+    });
+    if (this._aiBusy) intro.createEl('div', { cls: 'jrs-assistant-status', text: '正在生成写作建议…', attr: { 'aria-live': 'polite' } });
+    if (this._writingError) intro.createEl('p', { cls: 'jrs-assistant-error', text: this._writingError });
+    if (this._writingResult) {
+      const result = this._writingResult;
+      const preview = host.createEl('section', { cls: 'jrs-writing-result' });
+      preview.createEl('div', { cls: 'jrs-assistant-section-title', text: '建议预览' });
+      const output = preview.createEl('div', { cls: 'jrs-writing-output' });
+      MarkdownRenderer.renderMarkdown(result.text, output, result.selection.file.path, this);
+      const controls = preview.createEl('div', { cls: 'jrs-writing-result-actions' });
+      uiButton(controls, '替换原选区', 'check', () => this.applyWriting(false), 'od-btn od-btn--primary od-btn--sm');
+      uiButton(controls, '插在选区后', 'text-cursor-input', () => this.applyWriting(true), 'od-btn od-btn--sm');
+      uiButton(controls, '复制', 'copy', () => navigator.clipboard.writeText(result.text), 'od-btn od-btn--sm');
+    }
+    if (selection) this.renderRelated(host, this.paper, selection.text);
+  }
+
+  async previewWriting(mode) {
+    if (this._aiBusy || !this._selection) return;
+    const selection = this._selection;
+    if (selection.text.length > 6000) { new Notice('选区超过 6000 字符，请按段落处理'); return; }
+    const instruction = {
+      polish: '进行学术润色，保留论断与来源，改进术语、逻辑和表达，保持长度接近。',
+      expand: '扩写到原文约1.5倍，深化解释与逻辑，不编造实验结果或引用。',
+      condense: '精简到原文约一半，保留关键论断、术语和引用。',
+      continue: '续写一个衔接自然的学术段落，只输出续写内容，不编造结果、数据或引用。',
+    }[mode];
+    this._aiBusy = true; this._writingError = ''; this.renderBody();
+    try {
+      const text = await this.plugin.aiChat(`你是运筹学与航天领域的科研写作助手。${instruction} 使用原文的语言。仅输出正文，不解释。`, selection.text.slice(0, 6000), 1800);
+      this._writingResult = { text: text.trim().replace(/^```[a-z]*\n?|```$/g, ''), selection };
+    } catch (error) { this._writingError = error.message; }
+    finally { this._aiBusy = false; if (!this._closed) this.renderBody(); }
+  }
+
+  applyWriting(insertAfter) {
+    const result = this._writingResult;
+    if (!result) return;
+    const context = result.selection;
+    if (!this.editorStillOpen(context) || context.editor.getRange(context.from, context.to) !== context.text) {
+      new Notice('原选区已变化，请复制建议，或重新选择文字生成建议。'); return;
+    }
+    if (insertAfter) context.editor.replaceRange('\n\n' + result.text, context.to);
+    else context.editor.replaceRange(result.text, context.from, context.to);
+    this._writingResult = null; this._selection = null; this.renderBody();
+    new Notice('建议已采用，Ctrl+Z 可撤销');
+  }
+
+  renderTools() {
+    const host = this._body;
+    const links = host.createEl('section', { cls: 'jrs-assistant-tools-section' });
+    const linksHeading = links.createEl('div', { cls: 'jrs-assistant-section-title' }); linksHeading.createSpan({ text: '常用研究链接' });
+    uiButton(linksHeading, '管理', 'settings-2', () => new ResearchLinksModal(this.plugin).open(), 'jrs-text-button');
+    const linkGrid = links.createEl('div', { cls: 'jrs-assistant-actions' });
+    this.plugin.settings.commonLinks.forEach((link) => uiButton(linkGrid, link.name, 'external-link', () => this.plugin.openResearchWeb(link.url), 'od-btn od-btn--sm'));
+    const journal = host.createEl('section', { cls: 'jrs-assistant-tools-section' });
+    journal.createEl('div', { cls: 'jrs-assistant-section-title', text: '期刊分区速查' });
+    const form = journal.createEl('div', { cls: 'jrs-assistant-lookup' });
+    const input = form.createEl('input', { type: 'search', cls: 'jrs-side-input', attr: { placeholder: 'EJOR / 期刊或会议名称', 'aria-label': '查询期刊分区' } }); input.value = this._journalQuery;
+    const output = journal.createEl('div', { cls: 'jrs-lookup-out', attr: { 'aria-live': 'polite' } });
+    let sequence = 0;
+    const lookup = async () => {
+      const ticket = ++sequence; const query = input.value.trim();
+      output.empty(); if (!query) return;
+      output.createEl('div', { cls: 'od-hint', text: '正在查询…' });
+      try {
+        const result = await this.plugin.lookupJournal(query);
+        if (ticket !== sequence || !output.isConnected) return;
+        output.empty();
+        if (!result.found) { output.createEl('p', { cls: 'od-hint', text: '未收录此名称，可尝试英文全名或常用缩写。' }); return; }
+        const badges = output.createEl('div', { cls: 'jrs-side-badges' });
+        [[result.cas && `中科院 ${result.cas}${result.casTop ? ' · Top' : ''}`, 'mid'], [result.xr && `新锐 ${result.xr}`, 'mid'],
+          [result.ccf && `CCF-${result.ccf.grade}`, 'top'], [result.cast && `科协 ${result.cast}`, 'mid'], [result.warn, 'top']].forEach(([text, type]) => {
+          if (text) { const badge = badges.createEl('span', { cls: 'jrs-zone-badge', text }); badge.dataset.zone = type; }
+        });
+        output.createEl('p', { cls: 'od-hint', text: '数据年份：中科院 2025 / CCF 2026，供选刊参考。' });
+      } catch (error) { if (ticket === sequence) output.setText(`查询失败：${error.message}`); }
+    };
+    input.oninput = () => { this._journalQuery = input.value; window.clearTimeout(this._lookupTimer); this._lookupTimer = window.setTimeout(lookup, 300); };
+    input.onkeydown = (event) => { if (event.key === 'Enter') { event.preventDefault(); window.clearTimeout(this._lookupTimer); lookup(); } };
+    if (this._journalQuery) lookup();
+    const shortcuts = host.createEl('section', { cls: 'jrs-assistant-tools-section' });
+    shortcuts.createEl('div', { cls: 'jrs-assistant-section-title', text: '研究工具' });
+    const grid = shortcuts.createEl('div', { cls: 'jrs-assistant-actions' });
+    [['calendar-check', '今日小结', () => this.plugin.generateDailyDigest()],
+      ['table', '文献矩阵', () => this.plugin.generateMatrix()],
+      ['file-down', '导出 CSV', () => this.plugin.exportPapers('csv', this.plugin.getPapers())],
+      ['braces', '导出 BibTeX', () => this.plugin.exportPapers('bib', this.plugin.getPapers())],
+      ['target', '投稿冲刺', () => this.plugin.gotoSection('submit')],
+      ['sprout', '综述大纲', () => this.plugin.gotoSection('progress')]].forEach(([icon, label, action]) => uiButton(grid, label, icon, action, 'od-btn od-btn--sm'));
+    const submissions = this.plugin.getSubmissions().filter((submission) => submission.deadline).slice(0, 3);
+    if (submissions.length) {
+      const deadlines = host.createEl('section', { cls: 'jrs-assistant-tools-section' });
+      deadlines.createEl('div', { cls: 'jrs-assistant-section-title', text: '投稿节点' });
+      submissions.forEach((submission) => {
+        const button = uiButton(deadlines, submission.title, 'target', () => this.plugin.smartOpenFile(submission.file), 'jrs-related-title');
+        button.createSpan({ cls: 'od-hint', text: `${submission.target} · ${submission.deadline}` });
+      });
+    }
+  }
+
+  renderCapture(root) {
+    const capture = root.createEl('details', { cls: 'jrs-side-capture' }); const mode = this.tab;
+    capture.open = this._captureModes?.[mode] ?? mode === 'paper'; capture.ontoggle = () => { if (!this._captureModes) this._captureModes = {}; this._captureModes[mode] = capture.open; };
+    capture.createEl('summary', { text: '随手记 · 把想法留下来' });
+    const textarea = capture.createEl('textarea', { cls: 'jrs-side-input', attr: { rows: '2', placeholder: '这个方法能否用于我的研究？', 'aria-label': '研究想法' } });
+    textarea.value = this._captureDraft; textarea.oninput = () => { this._captureDraft = textarea.value; };
+    this._captureSource = capture.createEl('div', { cls: 'jrs-capture-source', text: this.paper ? `关联文献：${this.paper.title}` : '保存到今日收件箱' });
+    const actions = capture.createEl('div', { cls: 'jrs-capture-actions' });
+    uiButton(actions, '存入收件箱', 'inbox', async () => {
+      const value = textarea.value.trim(); if (!value) { new Notice('先写下一点想法'); textarea.focus(); return; }
+      const source = this.paper ? `\n来源：[[${this.paper.path.replace(/\.md$/, '')}]]` : '';
+      await this.plugin.captureThought(value + source); this._captureDraft = ''; textarea.value = ''; new Notice('想法已保存，文献来源已关联');
+    }, 'od-btn od-btn--primary od-btn--sm');
+    const append = uiButton(actions, '写入笔记', 'file-pen-line', async () => {
+      await this.plugin.appendPaperThought(this.paper, textarea.value); this._captureDraft = ''; textarea.value = ''; new Notice('已写入文献的「阅读想法」');
+    }, 'od-btn od-btn--sm'); append.disabled = !this.paper;
+    textarea.onkeydown = (event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); actions.querySelector('button')?.click(); } };
+  }
+
+
+}
+
+/* END GENERATED ASSISTANT */
+
+/* BEGIN GENERATED WEB */
+class ResearchBrowserPanel {
+  constructor(owner, root, url) { this.owner = owner; this.root = root; this.plugin = owner.plugin; this.url = url; this.build(); }
+  navigate(address) {
+    const url = new URL(address); if (!['http:', 'https:'].includes(url.protocol)) throw new Error('仅支持 HTTP(S) 网页');
+    this.url = url.href;
+    if (this.web && this.web.getAttribute('src') !== this.url) this.web.setAttribute('src', this.url);
+    this.address.textContent = url.hostname;
+    this.syncNavigation();
+  }
+  refreshLinks() {
+    if (!this.links) return;
+    this.links.empty(); this.links.createEl('option', { value: '', text: '选择常用网站' });
+    this.plugin.settings.commonLinks.forEach((link) => this.links.createEl('option', { value: link.url, text: link.name }));
+    this.syncNavigation();
+  }
+  syncNavigation() {
+    if (!this.links) return;
+    const origin = new URL(this.url).origin;
+    const known = this.plugin.settings.commonLinks.find((link) => new URL(link.url).origin === origin);
+    this.links.value = known?.url || '';
+    this.back.disabled = !this._ready || !this.web?.canGoBack();
+    this.forward.disabled = !this._ready || !this.web?.canGoForward();
+    this.reload.disabled = !this._ready;
+  }
+  build() {
+    const root = this.root; root.empty(); root.addClass('jrs-research-browser');
+    const header = root.createEl('div', { cls: 'jrs-browser-title' });
+    header.createEl('strong', { text: '研究网页' });
+    uiButton(header, '研究助手', 'panel-right', () => this.owner.showCompanionMode('assistant'), 'jrs-text-button');
+    const bar = root.createEl('div', { cls: 'jrs-browser-toolbar' });
+    this.back = uiButton(bar, '', 'arrow-left', () => { if (this.web?.canGoBack()) this.web.goBack(); }, 'od-icon-btn'); this.back.setAttribute('aria-label', '网页后退');
+    this.forward = uiButton(bar, '', 'arrow-right', () => { if (this.web?.canGoForward()) this.web.goForward(); }, 'od-icon-btn'); this.forward.setAttribute('aria-label', '网页前进');
+    this.reload = uiButton(bar, '', 'rotate-cw', () => this.web?.reload(), 'od-icon-btn'); this.reload.setAttribute('aria-label', '重新加载网页');
+    this.links = bar.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '在侧栏切换常用网站' } });
+    this.links.onchange = () => { if (this.links.value) this.plugin.openResearchWeb(this.links.value); };
+    this.refreshLinks();
+    uiButton(bar, '', 'external-link', () => openResearchLink(this.url), 'od-icon-btn').setAttribute('aria-label', '改用系统浏览器打开');
+    this.address = root.createEl('div', { cls: 'jrs-browser-address', text: new URL(this.url).hostname });
+    this.status = root.createEl('div', { cls: 'jrs-browser-status', text: '正在加载网站…' });
+    this.web = document.createElement('webview');
+    if (typeof this.web.loadURL !== 'function') {
+      this.web = null; this.status.textContent = '当前平台不支持内嵌网页，可在浏览器中继续使用。';
+      uiButton(root, '在浏览器中打开', 'external-link', () => openResearchLink(this.url), 'od-btn'); return;
+    }
+    this.web.className = 'jrs-browser-webview';
+    this.web.setAttribute('partition', 'persist:jensen-research');
+    this.web.setAttribute('webpreferences', 'contextIsolation=yes,sandbox=yes,nodeIntegration=no');
+    this.web.setAttribute('allowpopups', '');
+    this.web.setAttribute('src', this.url);
+    this.owner.registerDomEvent(this.web, 'dom-ready', () => { this._ready = true; this.syncNavigation(); });
+    this.owner.registerDomEvent(this.web, 'did-start-loading', () => { this._failed = false; this.status.textContent = '正在加载网站…'; this.status.hidden = false; });
+    this.owner.registerDomEvent(this.web, 'did-stop-loading', () => { this.status.hidden = !this._failed; this.syncNavigation(); });
+    const navigate = (event) => {
+      if (event.isMainFrame === false) return;
+      if (!/^https?:/i.test(event.url)) return;
+      this.url = event.url; this.address.textContent = new URL(event.url).hostname; this.syncNavigation();
+    };
+    this.owner.registerDomEvent(this.web, 'did-navigate', navigate);
+    this.owner.registerDomEvent(this.web, 'did-navigate-in-page', navigate);
+    this.owner.registerDomEvent(this.web, 'did-fail-load', (event) => { if (event.errorCode === -3 || event.isMainFrame === false) return; this._failed = true; this.status.hidden = false; this.status.textContent = `网站加载失败：${event.errorDescription}。可重试或使用右上角浏览器按钮。`; });
+    root.appendChild(this.web);
+  }
+}
+/* END GENERATED WEB */
+
+/* BEGIN GENERATED PDF */
+const PDF_MARK_COLORS = { mint: '#35d6a1', amber: '#f2c65c', violet: '#ae8ff0' };
+
+async function openResearchLink(address) {
+  const url = new URL(address);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('常用链接仅支持 HTTP 或 HTTPS');
+  const shell = window.require?.('electron')?.shell;
+  if (shell?.openExternal) await shell.openExternal(url.href);
+  else window.open(url.href, '_blank', 'noopener,noreferrer');
+}
+
+class PdfResearch {
+  constructor(plugin) {
+    this.plugin = plugin; this.app = plugin.app; this.revision = 0;
+    this._queues = new Map(); this._deleted = new Map(); this._readers = new Map();
+    if (!plugin.settings.pdfReadingPositions) plugin.settings.pdfReadingPositions = {};
+  }
+  start() {
+    this.plugin.registerDomEvent(this.app.workspace.containerEl, 'pointerup', () => {
+      window.clearTimeout(this._selectionTimer);
+      this._selectionTimer = window.setTimeout(() => this.captureSelection(), 80);
+    });
+    this.observer = new MutationObserver(() => this.schedulePaint());
+    this.observe(); this.schedulePaint();
+  }
+  observe() { this.observer.observe(this.app.workspace.containerEl, { childList: true, subtree: true }); }
+  destroy() {
+    this._closed = true; this.observer.disconnect(); window.clearTimeout(this._paintTimer); window.clearTimeout(this._selectionTimer); window.clearTimeout(this._positionTimer);
+    for (const reader of this._readers.values()) { reader.bus.off('pagechanging', reader.change); reader.bus.off('scalechanging', reader.change); }
+    this._readers.clear(); this.flushPositions();
+    this.app.workspace.containerEl.querySelectorAll('.jrs-pdf-highlights').forEach((node) => node.remove());
+  }
+  schedulePaint() {
+    if (this._closed) return;
+    if (this._paintTimer) return;
+    this._paintTimer = window.setTimeout(() => { this._paintTimer = null; this.paint(); }, 140);
+  }
+  activeContext() {
+    const leaves = this.app.workspace.getLeavesOfType('pdf').filter((leaf) => leaf.view.file && leaf.view.contentEl);
+    const leaf = leaves.find((entry) => entry === this.app.workspace.activeLeaf) || leaves.find((entry) => entry.view.contentEl.getBoundingClientRect().width > 0) || leaves[0];
+    if (!leaf) return null;
+    const viewer = leaf.view.viewer?.child?.pdfViewer?.pdfViewer;
+    return { leaf, file: leaf.view.file, viewer, page: Number(viewer?.currentPageNumber || leaf.view.contentEl.querySelector('.pdf-page-input')?.value) || 1, pages: Number(viewer?.pagesCount) || Number(leaf.view.viewer?.child?.pdfViewer?.pagesCount) || 1 };
+  }
+  readingPosition(pdf) { return this.plugin.settings.pdfReadingPositions[pdf] || null; }
+  trackReaders() {
+    if (this._closed) return;
+    const live = new Set();
+    for (const leaf of this.app.workspace.getLeavesOfType('pdf')) {
+      const viewer = leaf.view.viewer?.child?.pdfViewer?.pdfViewer;
+      const bus = viewer?.eventBus; const pdf = leaf.view.file?.path;
+      if (!pdf || !bus?.on || !bus?.off) continue;
+      live.add(leaf);
+      const old = this._readers.get(leaf);
+      if (old?.viewer === viewer && old.pdf === pdf) continue;
+      if (old) { old.bus.off('pagechanging', old.change); old.bus.off('scalechanging', old.change); }
+      const change = () => { if (leaf.view.contentEl?.isConnected !== false) this.rememberPosition(pdf, viewer); };
+      bus.on('pagechanging', change); bus.on('scalechanging', change);
+      this._readers.set(leaf, { pdf, viewer, bus, change });
+    }
+    for (const [leaf, reader] of this._readers) {
+      if (live.has(leaf)) continue;
+      reader.bus.off('pagechanging', reader.change); reader.bus.off('scalechanging', reader.change); this._readers.delete(leaf);
+    }
+  }
+  rememberPosition(pdf, viewer) {
+    if (this._closed || !viewer?.pagesCount) return;
+    const position = ResearchCore.normalizeReadingPosition({ page: viewer.currentPageNumber, pages: viewer.pagesCount, scale: viewer.currentScaleValue, updated: Date.now() });
+    this.plugin.settings.pdfReadingPositions[pdf] = position; this._positionDirty = true;
+    this.app.workspace.getLeavesOfType(VIEW_SIDE).forEach((leaf) => leaf.view.onPdfPosition?.(pdf, position));
+    this.app.workspace.getLeavesOfType(VIEW_DASHBOARD).forEach((leaf) => leaf.view._readingDeck?.updatePosition?.(pdf));
+    window.clearTimeout(this._positionTimer);
+    this._positionTimer = window.setTimeout(() => this.flushPositions(), 700);
+    return position;
+  }
+  async flushPositions() {
+    if (!this._positionDirty) return;
+    this._positionDirty = false;
+    try { await this.plugin.saveSettings(); }
+    catch (error) { this._positionDirty = true; console.error('[JRS] 阅读位置保存失败', error); }
+  }
+  async restorePosition(pdf, leaf, saved = this.readingPosition(pdf)) {
+    let viewer;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      viewer = leaf.view.viewer?.child?.pdfViewer?.pdfViewer;
+      if (viewer?.pagesCount) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 75));
+    }
+    if (!viewer?.pagesCount) return;
+    this.trackReaders();
+    if (saved) {
+      const position = ResearchCore.normalizeReadingPosition(saved, viewer.pagesCount);
+      viewer.currentScaleValue = position.scale; viewer.currentPageNumber = position.page;
+    }
+    return this.rememberPosition(pdf, viewer);
+  }
+  enqueue(pdf, action) {
+    const previous = this._queues.get(pdf) || Promise.resolve();
+    const job = previous.catch(() => {}).then(action); this._queues.set(pdf, job);
+    const clear = () => { if (this._queues.get(pdf) === job) this._queues.delete(pdf); };
+    job.then(clear, clear); return job;
+  }
+  captureSelection() {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+    const range = selection.getRangeAt(0);
+    const element = (node) => node.nodeType === 1 ? node : node.parentElement;
+    const firstPage = element(range.startContainer)?.closest('.page[data-page-number]');
+    const lastPage = element(range.endContainer)?.closest('.page[data-page-number]');
+    if (!firstPage) return null;
+    if (firstPage !== lastPage) {
+      this.selection = null;
+      this.app.workspace.getLeavesOfType(VIEW_SIDE).forEach((entry) => {
+        entry.view._pdfSelection = null; entry.view._pdfError = '请在同一 PDF 页面中选择原文；跨页内容请分段保存或翻译。';
+        if (entry.view.tab === 'pdf') entry.view.renderBody();
+      });
+      return null;
+    }
+    const leaf = this.app.workspace.getLeavesOfType('pdf').find((entry) => entry.view.file && entry.view.contentEl?.contains(firstPage));
+    if (!leaf) return null;
+    const text = selection.toString().trim(); if (!text) return null;
+    const rect = firstPage.getBoundingClientRect(); if (!rect.width || !rect.height) return null;
+    const seen = new Set();
+    const rects = [...range.getClientRects()].filter((entry) => entry.width > 1 && entry.height > 1).map((entry) => {
+      const x = Math.max(0, (entry.left - rect.left) / rect.width); const y = Math.max(0, (entry.top - rect.top) / rect.height);
+      return { x, y, w: Math.max(0, Math.min(1 - x, entry.width / rect.width)), h: Math.max(0, Math.min(1 - y, entry.height / rect.height)) };
+    }).filter((entry) => {
+      const key = [entry.x, entry.y, entry.w, entry.h].map((value) => value.toFixed(4)).join(',');
+      if (entry.w <= 0 || entry.h <= 0 || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    let anchor;
+    const textLayer = firstPage.querySelector('.textLayer');
+    if (textLayer?.contains(range.startContainer)) {
+      const prefix = document.createRange(); prefix.selectNodeContents(textLayer); prefix.setEnd(range.startContainer, range.startOffset);
+      anchor = prefix.toString().length;
+    }
+    const captured = { pdf: leaf.view.file.path, page: Number(firstPage.dataset.pageNumber), text, rects, ...(anchor == null ? {} : { anchor }) };
+    this.selection = captured;
+    this.app.workspace.getLeavesOfType(VIEW_SIDE).forEach((entry) => entry.view.setPdfSelection?.(captured));
+    return captured;
+  }
+  annotations(path) { return this.plugin.settings.pdfAnnotations[path] || []; }
+  notePath(pdf) {
+    let hash = 2166136261;
+    for (const char of pdf) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+    const basename = pdf.split('/').pop().replace(/\.pdf$/i, '');
+    return `${this.plugin.settings.annotationsFolder}/${sanitizeFilename(basename)}-${(hash >>> 0).toString(36)}.md`;
+  }
+  async writeAnnotation(entry) {
+    const path = this.notePath(entry.pdf);
+    await this.plugin.ensureFolder(this.plugin.settings.annotationsFolder);
+    const old = this.app.vault.getAbstractFileByPath(path);
+    const block = ResearchCore.annotationBlock(entry, window.moment(entry.created).format('YYYY-MM-DD HH:mm'));
+    if (old instanceof TFile) await this.app.vault.process(old, (content) => ResearchCore.replaceAnnotationBlock(content, entry.id, block));
+    else await this.app.vault.create(path, `# PDF 阅读批注\n\n来源：[[${entry.pdf}]]\n\n${block}\n`);
+  }
+  save(selection, note, color) {
+    if (!selection?.pdf || typeof selection.text !== 'string' || !selection.text.trim() || !Number.isInteger(selection.page) || selection.page < 1) return Promise.reject(new Error('请先在 PDF 中选中一段文字'));
+    if (selection.text.length > 12000) return Promise.reject(new Error('选区过长，请按段落保存批注'));
+    const annotation = { ...structuredClone(selection), id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), note: String(note || '').trim(), color: Object.hasOwn(PDF_MARK_COLORS, color) ? color : 'mint', created: new Date().toISOString() };
+    return this.enqueue(annotation.pdf, async () => {
+      await this.writeAnnotation(annotation);
+      this.plugin.settings.pdfAnnotations[annotation.pdf] = [...this.annotations(annotation.pdf), annotation];
+      await this.plugin.saveSettings(); this.revision++; this.paint(); return annotation;
+    });
+  }
+  update(pdf, id, patch, expected) {
+    return this.enqueue(pdf, async () => {
+      const original = this.annotations(pdf).find((entry) => entry.id === id);
+      if (!original) throw new Error('这条批注已被删除');
+      if (expected && (String(original.note || '') !== String(expected.note || '') || original.color !== expected.color || original.updated !== expected.updated)) throw new Error('批注已被其他操作修改，请重新打开编辑');
+      const next = { ...original, note: String(patch.note ?? original.note ?? '').trim(), color: Object.hasOwn(PDF_MARK_COLORS, patch.color) ? patch.color : original.color, updated: new Date().toISOString() };
+      await this.writeAnnotation(next);
+      this.plugin.settings.pdfAnnotations[pdf] = this.annotations(pdf).map((entry) => entry.id === id ? next : entry);
+      await this.plugin.saveSettings(); this.revision++; this.paint(); return next;
+    });
+  }
+  remove(pdf, id) {
+    return this.enqueue(pdf, async () => {
+      const entries = this.annotations(pdf); const index = entries.findIndex((entry) => entry.id === id);
+      if (index < 0) return;
+      const annotation = structuredClone(entries[index]);
+      const file = this.app.vault.getAbstractFileByPath(this.notePath(pdf));
+      if (file instanceof TFile) await this.app.vault.process(file, (content) => ResearchCore.replaceAnnotationBlock(content, id, ''));
+      this.plugin.settings.pdfAnnotations[pdf] = entries.filter((entry) => entry.id !== id);
+      this._deleted.set(pdf, { annotation, index });
+      await this.plugin.saveSettings(); this.revision++; this.paint(); return annotation;
+    });
+  }
+  canUndoDelete(pdf) { return this._deleted.has(pdf); }
+  undoDelete(pdf) {
+    return this.enqueue(pdf, async () => {
+      const deleted = this._deleted.get(pdf); if (!deleted) return;
+      const entries = [...this.annotations(pdf)];
+      if (entries.some((entry) => entry.id === deleted.annotation.id)) throw new Error('此批注已恢复');
+      await this.writeAnnotation(deleted.annotation);
+      entries.splice(Math.min(deleted.index, entries.length), 0, deleted.annotation);
+      this.plugin.settings.pdfAnnotations[pdf] = entries; this._deleted.delete(pdf);
+      await this.plugin.saveSettings(); this.revision++; this.paint(); return deleted.annotation;
+    });
+  }
+  async jump(pdf, page) {
+    const file = this.app.vault.getAbstractFileByPath(pdf); if (!(file instanceof TFile)) throw new Error('PDF 文件不存在');
+    let leaf = this.app.workspace.getLeavesOfType('pdf').find((entry) => entry.view.file?.path === pdf);
+    if (!leaf) { leaf = this.app.workspace.getLeaf('tab'); await leaf.openFile(file, { eState: { subpath: `#page=${page}` } }); }
+    this.app.workspace.revealLeaf(leaf);
+    const viewer = leaf.view.viewer?.child?.pdfViewer?.pdfViewer;
+    if (viewer) viewer.currentPageNumber = Math.max(1, Math.min(Number(viewer.pagesCount) || 1, page));
+    else leaf.view.setEphemeralState?.({ subpath: `#page=${page}` });
+    this.trackReaders(); if (viewer) this.rememberPosition(pdf, viewer);
+    this.schedulePaint();
+  }
+  async readText(path, maxPages = 8, maxCharacters = 18000) {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile) || file.extension.toLowerCase() !== 'pdf') throw new Error('PDF 尚未在当前知识库中，请先入库或打开原文');
+    let leaf = this.app.workspace.getLeavesOfType('pdf').find((entry) => entry.view.file?.path === path);
+    const savedPosition = structuredClone(this.readingPosition(path));
+    const newlyOpened = !leaf;
+    if (!leaf) { leaf = this.app.workspace.getLeaf('tab'); await leaf.openFile(file, { active: false }); }
+    let document;
+    for (let attempt = 0; attempt < 40; attempt++) {
+      document = leaf.view.viewer?.child?.pdfViewer?.pdfDocument || leaf.view.viewer?.child?.pdfViewer?.pdfViewer?.pdfDocument;
+      if (document) break;
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+    if (!document) throw new Error('PDF 还未加载完成，请打开原文后重试');
+    if (newlyOpened && savedPosition) await this.restorePosition(path, leaf, savedPosition);
+    const pages = Math.min(maxPages, document.numPages); const chunks = []; let length = 0;
+    for (let number = 1; number <= pages && length < maxCharacters; number++) {
+      const page = await document.getPage(number); const content = await page.getTextContent();
+      const text = content.items.map((item) => typeof item.str === 'string' ? item.str + (item.hasEOL ? '\n' : ' ') : '').join('').trim();
+      if (text) { chunks.push(`[PDF 第 ${number} 页]\n${text}`); length += text.length; }
+    }
+    if (!chunks.length) throw new Error('此 PDF 没有可提取的文本层，请先 OCR 后再生成摘要');
+    return `以下为 PDF 前 ${pages}/${document.numPages} 页的正文摘取（最多 ${maxCharacters} 字符）：\n` + chunks.join('\n\n').slice(0, maxCharacters);
+  }
+  paint() {
+    if (this._closed) return;
+    this.observer?.disconnect();
+    try {
+      this.trackReaders();
+      this.app.workspace.getLeavesOfType('pdf').forEach((leaf) => {
+        const file = leaf.view.file; if (!file || !leaf.view.contentEl) return;
+        const list = this.annotations(file.path);
+        leaf.view.contentEl.querySelectorAll('.page[data-page-number]').forEach((page) => {
+          const signature = file.path + ':' + this.revision;
+          const entries = list.filter((entry) => entry.page === Number(page.dataset.pageNumber));
+          if (page.dataset.jrsMarks === signature && (page.querySelector('.jrs-pdf-highlights') || !entries.length)) return;
+          page.querySelectorAll('.jrs-pdf-highlights').forEach((layer) => layer.remove());
+          if (entries.length) {
+            const layer = page.createEl('div', { cls: 'jrs-pdf-highlights', attr: { 'aria-hidden': 'true' } });
+            entries.forEach((entry) => (entry.rects || []).forEach((rect) => {
+              if (![rect.x, rect.y, rect.w, rect.h].every(Number.isFinite)) return;
+              const mark = layer.createEl('span', { cls: 'jrs-pdf-mark' });
+              mark.style.cssText = `left:${rect.x * 100}%;top:${rect.y * 100}%;width:${rect.w * 100}%;height:${rect.h * 100}%;background:${PDF_MARK_COLORS[entry.color] || PDF_MARK_COLORS.mint};`;
+              mark.dataset.annotationId = entry.id;
+            }));
+          }
+          page.dataset.jrsMarks = signature;
+        });
+      });
+    } finally { if (!this._closed) this.observe(); }
   }
 }
 
-/* ==========================================================================
- * 应用壳视图：左侧栏 + Topbar + 区段路由
- * ========================================================================== */
+class EditAnnotationModal extends Modal {
+  constructor(plugin, pdf, entry, onDone) {
+    super(plugin.app); this.plugin = plugin; this.pdf = pdf; this.entry = structuredClone(entry); this.onDone = onDone;
+  }
+  onOpen() {
+    this.titleEl.setText(`编辑批注 · 第 ${this.entry.page} 页`);
+    this.contentEl.addClass('jrs-side', 'jrs-annotation-editor');
+    this.contentEl.createEl('blockquote', { cls: 'jrs-selection-preview', text: this.entry.text });
+    let note = this.entry.note || ''; let color = this.entry.color;
+    new Setting(this.contentEl).setName('我的评论').addTextArea((input) => {
+      input.setValue(note).onChange((value) => { note = value; }); input.inputEl.rows = 6; input.inputEl.setAttribute('aria-label', '修改批注评论');
+    });
+    new Setting(this.contentEl).setName('高亮颜色').addDropdown((select) => {
+      select.addOption('mint', '薄荷绿').addOption('amber', '琥珀黄').addOption('violet', '紫罗兰').setValue(color).onChange((value) => { color = value; });
+    });
+    const actions = this.contentEl.createEl('div', { cls: 'jrs-row-actions' });
+    uiButton(actions, '保存修改', 'check', async () => {
+      await this.plugin.pdfResearch.update(this.pdf, this.entry.id, { note, color }, this.entry);
+      this.onDone?.(); this.close(); new Notice('批注与 Markdown 已更新');
+    }, 'od-btn od-btn--primary');
+    uiButton(actions, '取消', '', () => this.close(), 'od-btn');
+  }
+}
+
+class ResearchLinksModal extends Modal {
+  constructor(plugin) { super(plugin.app); this.plugin = plugin; this.links = structuredClone(plugin.settings.commonLinks); }
+  onOpen() {
+    this.titleEl.setText('常用研究链接'); this.contentEl.empty();
+    this.contentEl.createEl('p', { cls: 'od-hint', text: '直接在右侧网页面板打开，登录状态在此设备保留。' });
+    this.links.forEach((link, index) => {
+      new Setting(this.contentEl).addText((text) => text.setValue(link.name).setPlaceholder('名称').onChange((value) => { link.name = value; }))
+        .addText((text) => text.setValue(link.url).setPlaceholder('https://…').onChange((value) => { link.url = value; }))
+        .addExtraButton((button) => button.setIcon('trash-2').setTooltip('移除链接').onClick(() => { this.links.splice(index, 1); this.onOpen(); }));
+    });
+    const actions = this.contentEl.createEl('div', { cls: 'jrs-row-actions' });
+    uiButton(actions, '添加链接', 'plus', () => { this.links.push({ name: '', url: '' }); this.onOpen(); }, 'od-btn');
+    uiButton(actions, '保存', 'check', async () => {
+      for (const link of this.links) {
+        if (!link.name.trim() || !['http:', 'https:'].includes(new URL(link.url).protocol)) throw new Error('请为每个链接填写名称和 HTTP(S) 地址');
+      }
+      this.plugin.settings.commonLinks = this.links.map((link) => ({ name: link.name.trim(), url: link.url.trim() }));
+      await this.plugin.saveSettings(); this.app.workspace.getLeavesOfType(VIEW_SIDE).forEach((leaf) => leaf.view.refreshLinks()); this.close();
+    }, 'od-btn od-btn--primary');
+  }
+}
+/* END GENERATED PDF */
+
+/* BEGIN GENERATED LIFE */
+class SidebarLife {
+  constructor(view, host) {
+    this.view = view; this.plugin = view.plugin; this.host = host;
+    this.month = view._lifeMonth || window.moment().startOf('month');
+    this._unsubscribe = this.plugin.pomo.onTick(() => this.renderClock());
+    this.render();
+  }
+  destroy() { this._unsubscribe?.(); }
+  render() {
+    const host = this.host; host.empty(); host.addClass('jrs-life-sidebar');
+    const heading = host.createEl('div', { cls: 'jrs-life-heading' });
+    heading.createSpan({ text: '日历与生活' });
+    const reminder = uiButton(heading, '', 'bell', () => new WellnessSettingsModal(this.plugin).open(), 'od-icon-btn'); reminder.setAttribute('aria-label', '喝水与休息提醒设置');
+    const calendar = host.createEl('div', { cls: 'jrs-mini-calendar' });
+    const bar = calendar.createEl('div', { cls: 'jrs-mini-calendar-bar' });
+    uiButton(bar, '', 'chevron-left', () => this.moveMonth(-1), 'jrs-mini-cal-arrow').setAttribute('aria-label', '上个月');
+    uiButton(bar, this.month.format('YYYY年 M月'), '', () => { this.month = window.moment().startOf('month'); this.view._lifeMonth = this.month; this.render(); }, 'jrs-mini-cal-month');
+    uiButton(bar, '', 'chevron-right', () => this.moveMonth(1), 'jrs-mini-cal-arrow').setAttribute('aria-label', '下个月');
+    const days = calendar.createEl('div', { cls: 'jrs-mini-calendar-days' });
+    '一二三四五六日'.split('').forEach((day) => days.createSpan({ cls: 'jrs-mini-cal-week', text: day }));
+    const first = (this.month.day() + 6) % 7;
+    for (let i = 0; i < first; i++) days.createSpan();
+    for (let day = 1; day <= this.month.daysInMonth(); day++) {
+      const key = this.month.clone().date(day).format('YYYY-MM-DD');
+      const log = this.plugin.wellnessDay(key);
+      const button = uiButton(days, String(day), '', () => new LifeDayModal(this.plugin, key, () => this.render()).open(), `jrs-mini-cal-day${key === todayKey() ? ' is-today' : ''}${log.workouts ? ' is-trained' : ''}`);
+      button.title = `${key} · 喝水 ${log.water} 次 · 休息 ${log.breaks} 次${log.workouts ? ' · 已健身' : ''}`;
+      button.setAttribute('aria-label', button.title);
+      if (this.plugin.findDailyNote(key)) button.classList.add('has-note');
+    }
+    const log = this.plugin.wellnessDay();
+    const habits = host.createEl('div', { cls: 'jrs-habit-buttons' });
+    [['water', 'glass-water', '喝水', log.water], ['breaks', 'coffee', '休息', log.breaks], ['workouts', 'dumbbell', '健身', log.workouts ? '已打卡' : '打卡']].forEach(([kind, icon, label, count]) => {
+      const button = uiButton(habits, '', icon, async () => { await this.plugin.recordWellness(kind, todayKey(), kind === 'workouts' && log.workouts ? -1 : 1); this.render(); }, `jrs-habit-button${kind === 'workouts' && log.workouts ? ' is-done' : ''}`);
+      button.createSpan({ text: label }); button.createEl('strong', { text: String(count) });
+      button.title = kind === 'workouts' ? log.workouts ? '取消今日健身打卡' : '记录今日健身' : `记录一次${label}`;
+    });
+    const focus = host.createEl('div', { cls: 'jrs-life-focus' });
+    setIcon(focus.createSpan(), 'timer'); this.clock = focus.createEl('strong');
+    this.start = uiButton(focus, '', '', () => { this.plugin.pomo.phase === 'idle' ? this.plugin.pomo.start() : this.plugin.pomo.reset(); }, 'jrs-text-button');
+    this.renderClock();
+  }
+  moveMonth(delta) { this.month = this.month.clone().add(delta, 'month'); this.view._lifeMonth = this.month; this.render(); }
+  renderClock() {
+    if (!this.clock) return;
+    const pomo = this.plugin.pomo;
+    this.clock.textContent = pomo.phase === 'idle' ? `${String(this.plugin.settings.pomoWork).padStart(2, '0')}:00` : pomo.clockText();
+    this.start.textContent = pomo.phase === 'idle' ? '开始专注' : '停止';
+  }
+}
+
+class LifeDayModal extends Modal {
+  constructor(plugin, key, onDone) { super(plugin.app); this.plugin = plugin; this.key = key; this.onDone = onDone; }
+  onOpen() {
+    this.titleEl.setText(`${this.key} · 生活记录`); this.contentEl.empty();
+    const log = this.plugin.wellnessDay(this.key);
+    [['water', '喝水记录', log.water], ['breaks', '休息记录', log.breaks], ['workouts', '健身打卡', log.workouts]].forEach(([kind, label, count]) => {
+      const setting = new Setting(this.contentEl).setName(label).setDesc(`${count} 次`);
+      setting.addButton((button) => button.setButtonText('−').setDisabled(!count).onClick(async () => { await this.plugin.recordWellness(kind, this.key, -1); this.onOpen(); this.onDone?.(); }));
+      setting.addButton((button) => button.setButtonText('+ 记录').setDisabled(kind === 'workouts' && count >= 1).onClick(async () => { await this.plugin.recordWellness(kind, this.key, 1); this.onOpen(); this.onDone?.(); }));
+    });
+    uiButton(this.contentEl, '打开这一天的日记', 'calendar-days', () => this.plugin.openDailyNote(this.key), 'od-btn od-btn--primary');
+  }
+}
+
+class WellnessSettingsModal extends Modal {
+  constructor(plugin) { super(plugin.app); this.plugin = plugin; }
+  onOpen() {
+    this.titleEl.setText('喝水与休息提醒');
+    const options = this.plugin.settings.wellnessReminders;
+    new Setting(this.contentEl).setName('启用温和提醒').setDesc('仅在 Obsidian 可见且处于提醒时段时显示。').addToggle((toggle) => toggle.setValue(options.enabled).onChange(async (value) => { options.enabled = value; this.plugin._wellnessStarted = Date.now(); await this.plugin.saveSettings(); }));
+    [['waterMinutes', '喝水提醒间隔', 60], ['breakMinutes', '休息提醒间隔', 50]].forEach(([key, label, fallback]) => {
+      new Setting(this.contentEl).setName(label).setDesc('分钟，5–240').addText((text) => {
+        text.setValue(String(options[key])); text.inputEl.type = 'number'; text.inputEl.min = '5'; text.inputEl.max = '240';
+        text.onChange(async (value) => { const number = Number(value); if (Number.isFinite(number) && number >= 5 && number <= 240) { options[key] = number; await this.plugin.saveSettings(); } });
+      });
+    });
+    [['startHour', '每日开始时间'], ['endHour', '每日结束时间']].forEach(([key, label]) => new Setting(this.contentEl).setName(label).addDropdown((dropdown) => {
+      for (let hour = 0; hour < 24; hour++) dropdown.addOption(String(hour), `${String(hour).padStart(2, '0')}:00`);
+      dropdown.setValue(String(options[key])).onChange(async (value) => { options[key] = Number(value); await this.plugin.saveSettings(); });
+    }));
+  }
+}
+
+class LifePanelView extends ItemView {
+  constructor(leaf, plugin) { super(leaf); this.plugin = plugin; }
+  getViewType() { return VIEW_LIFE; }
+  getDisplayText() { return '日历与生活'; }
+  getIcon() { return 'calendar-heart'; }
+  async onOpen() {
+    this.render(); this.registerInterval(window.setInterval(() => { if (this._date !== todayKey()) this.render(); }, 60000));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => {
+      if (file.path !== this.plugin.dailyPath()) return;
+      window.clearTimeout(this._taskRefresh); this._taskRefresh = window.setTimeout(() => this.render(), 160);
+    }));
+  }
+  onClose() { this._life?.destroy(); window.clearTimeout(this._taskRefresh); }
+  render() {
+    this._life?.destroy(); this._date = todayKey();
+    const root = this.contentEl; root.empty(); root.addClass('jrs-view', 'jrs-life-view');
+    const header = root.createEl('header', { cls: 'jrs-life-panel-header' });
+    header.createEl('div', { cls: 'jrs-eyebrow', text: 'DAILY COMPANION' });
+    header.createEl('h2', { text: '日历与生活' });
+    header.createEl('p', { text: `${window.moment().format('M月D日')} 星期${'日一二三四五六'[window.moment().day()]}` });
+    buildThemeToggle(header, this.plugin);
+    const body = root.createEl('div', { cls: 'jrs-life-panel-body' });
+    this._life = new SidebarLife(this, body.createEl('section'));
+    const notes = body.createEl('section', { cls: 'jrs-life-daily-actions' });
+    notes.createEl('h3', { text: '今天的小计划' });
+    uiButton(notes, '打开今日日记', 'calendar-days', () => this.plugin.openDailyNote(), 'od-btn');
+    uiButton(notes, '生成今日小结', 'notebook-pen', () => this.plugin.generateDailyDigest(), 'od-btn');
+    uiButton(notes, '喝水与休息提醒', 'bell', () => new WellnessSettingsModal(this.plugin).open(), 'od-btn');
+    const hint = notes.createEl('p', { cls: 'od-hint' });
+    hint.textContent = this.plugin.settings.wellnessReminders.enabled ? `提醒已开启 · 喝水 ${this.plugin.settings.wellnessReminders.waterMinutes} 分钟 / 休息 ${this.plugin.settings.wellnessReminders.breakMinutes} 分钟` : '提醒已关闭，可随时开启';
+    const tasks = notes.createEl('div', { cls: 'jrs-life-tasks' });
+    this.plugin.getTodayTasks().then((items) => {
+      if (!tasks.isConnected) return;
+      if (!items.length) { tasks.createEl('p', { cls: 'od-hint', text: '日记里的待办会出现在这里。' }); return; }
+      items.slice(0, 8).forEach((task) => {
+        const label = tasks.createEl('label', { cls: 'jrs-survey-task' });
+        const check = label.createEl('input', { type: 'checkbox' }); check.checked = task.done; label.createSpan({ text: task.text });
+        check.onchange = async () => { check.disabled = true; try { await this.plugin.toggleDailyTask(task); } finally { check.disabled = false; } };
+      });
+    });
+  }
+}
+
+const WellnessMethods = {
+  wellnessDay(key = todayKey()) { return Object.assign({ water: 0, breaks: 0, workouts: 0 }, this.settings.wellnessLog[key]); },
+  async recordWellness(kind, key = todayKey(), delta = 1) {
+    if (!['water', 'breaks', 'workouts'].includes(kind) || !/^\d{4}-\d{2}-\d{2}$/.test(key)) throw new Error('无效的生活记录');
+    const log = this.wellnessDay(key); const old = log[kind];
+    log[kind] = Math.max(0, Math.min(kind === 'workouts' ? 1 : 999, old + delta));
+    log[`${kind}At`] = Date.now(); this.settings.wellnessLog[key] = log;
+    await this.saveSettings();
+    this.app.workspace.getLeavesOfType(VIEW_LIFE).forEach((leaf) => leaf.view._life?.render());
+    return log;
+  },
+  startWellnessReminders() {
+    this._wellnessStarted = Date.now(); this._wellnessNotified = {}; this._wellnessSnooze = {};
+    this.registerInterval(window.setInterval(() => this.checkWellnessReminders(), 30000));
+  },
+  checkWellnessReminders() {
+    const options = this.settings.wellnessReminders;
+    if (!options.enabled || document.visibilityState !== 'visible') return;
+    const hour = window.moment().hour();
+    const inHours = options.startHour === options.endHour || (options.startHour < options.endHour ? hour >= options.startHour && hour < options.endHour : hour >= options.startHour || hour < options.endHour);
+    if (!inHours) return;
+    const now = Date.now(); const log = this.wellnessDay();
+    for (const [kind, minutes, label] of [['water', options.waterMinutes, '喝点水，让思路缓一缓。'], ['breaks', options.breakMinutes, '暂时离开屏幕，活动一下。']]) {
+      const previous = Math.max(this._wellnessStarted, log[`${kind}At`] || 0, this._wellnessNotified[kind] || 0);
+      if (now - previous < Math.max(5, Number(minutes) || 60) * 60000 || now < (this._wellnessSnooze[kind] || 0)) continue;
+      this._wellnessNotified[kind] = now;
+      const content = document.createElement('div'); content.createEl('p', { text: label });
+      let notice;
+      uiButton(content, kind === 'water' ? '记录喝水' : '记录休息', kind === 'water' ? 'glass-water' : 'coffee', async () => { await this.recordWellness(kind); notice.hide(); }, 'od-btn');
+      uiButton(content, '10 分钟后', 'clock', () => { this._wellnessSnooze[kind] = now + 10 * 60000; this._wellnessNotified[kind] = now - Math.max(5, Number(minutes) || 60) * 60000; notice.hide(); }, 'od-btn');
+      notice = new Notice(content, 30000);
+    }
+  },
+};
+/* END GENERATED LIFE */
+
+/* BEGIN GENERATED DECK */
+class ReadingDeck {
+  constructor(view, host, papers) {
+    this.view = view; this.plugin = view.plugin; this.host = host; this.allPapers = papers;
+    this.filter = this.plugin.settings.deckFilter || 'active'; this.papers = this.filtered();
+    const selectedPath = this.plugin._contextPaperPath || this.plugin.settings.lastReadingPath;
+    this.index = Math.max(0, this.papers.findIndex((paper) => paper.path === selectedPath));
+    this.cards = []; this.mode = this.plugin.settings.deckMode || '3d'; this.render();
+  }
+  destroy() { window.clearInterval(this._tour); this._tour = null; }
+  filtered() {
+    return this.allPapers.filter((paper) => this.filter === 'all' || this.filter === 'reading' && paper.status === '阅读中'
+      || this.filter === 'todo' && paper.status === '待读' || this.filter === 'active' && ['阅读中', '待读'].includes(paper.status));
+  }
+  setFilter(filter, path) {
+    this.destroy(); this.filter = filter; this.papers = this.filtered();
+    this.index = Math.max(0, this.papers.findIndex((paper) => paper.path === path));
+    this.plugin.settings.deckFilter = filter;
+    this.plugin.saveSettings().catch((error) => new Notice(`筛选保存失败：${error.message}`));
+    this.render(); if (this.papers.length) this.select(this.index);
+  }
+  selectPath(path) {
+    let index = this.papers.findIndex((paper) => paper.path === path);
+    if (index < 0 && this.allPapers.some((paper) => paper.path === path)) { this.setFilter('all', path); return; }
+    if (index >= 0) this.select(index);
+  }
+  updatePosition(pdf) { if (this.papers[this.index]?.pdf === pdf) this.updateSummary(); }
+  async open(index = this.index, split = false) {
+    if (this._opening || !this.papers[index]) return;
+    this._opening = true; this.destroy(); this.tourButton?.setAttribute('aria-pressed', 'false');
+    if (this.tourButton) this.tourButton.lastElementChild.textContent = '自动浏览';
+    try { this.select(index); await this.plugin.openReading(this.papers[index], { split }); }
+    finally { this._opening = false; }
+  }
+  updateSummary() {
+    const paper = this.papers[this.index]; if (!paper || !this.selectedTitle) return;
+    this.selectedTitle.textContent = paper.title;
+    const position = this.plugin.pdfResearch?.readingPosition(paper.pdf);
+    this.selectedMeta.textContent = [paper.status, paper.year, paper.authorsShort, position ? `上次读至 ${position.page} / ${position.pages} 页` : paper.topics[0]].filter(Boolean).join(' · ');
+  }
+
+  render() {
+    const host = this.host; host.empty(); host.addClass('jrs-reading-deck');
+    const bar = host.createEl('div', { cls: 'jrs-deck-toolbar' });
+    const title = bar.createEl('div', { cls: 'jrs-deck-label' }); setIcon(title.createSpan(), 'layers-3'); title.createSpan({ text: '文献阅读台' });
+    const filter = bar.createEl('select', { cls: 'jrs-select jrs-deck-filter', attr: { 'aria-label': '阅读台文献范围' } });
+    [['active', '阅读队列'], ['reading', '正在阅读'], ['todo', '待读文献'], ['all', '全部文献']].forEach(([value, text]) => filter.createEl('option', { value, text }));
+    filter.value = this.filter; filter.onchange = () => this.setFilter(filter.value);
+
+    this.tourButton = uiButton(bar, '自动浏览', 'rotate-cw', () => this.toggleTour(), 'jrs-deck-tool');
+    this.tourButton.setAttribute('aria-pressed', 'false');
+    this.modeButton = uiButton(bar, '列表视图', 'list', async () => { this.mode = this.mode === '3d' ? 'list' : '3d'; this.plugin.settings.deckMode = this.mode; await this.plugin.saveSettings(); this.renderStage(); }, 'jrs-deck-tool');
+    if (!this.papers.length) {
+      this.selectedTitle = null; this.stage = null; this.cards = []; this.position = null; this.readButton = null;
+      this.tourButton.disabled = true; this.modeButton.disabled = true;
+      uiEmpty(host, this.allPapers.length ? '当前队列没有文献' : '从第一篇文献开始', this.allPapers.length ? '切换范围可以回顾已经完成的文献。' : '添加文献后，阅读卡片会与右侧助手联动。', this.allPapers.length ? '查看全部文献' : '添加文献', () => this.allPapers.length ? this.setFilter('all') : new AddPaperModal(this.plugin, () => this.view.render()).open(), 'layers-3');
+      return;
+    }
+    this.stage = host.createEl('div', { cls: 'jrs-deck-stage', attr: { tabindex: '0', role: 'group', 'aria-label': '文献卡组，使用左右方向键切换文献' } });
+    this.stage.onkeydown = (event) => {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); this.select(this.index + (event.key === 'ArrowRight' ? 1 : -1)); this.cards[this.index]?.focus({ preventScroll: true }); }
+    };
+    this.stage.onpointerenter = () => { this._hover = true; };
+    this.stage.onpointerleave = () => { this._hover = false; this.stage.style.setProperty('--jrs-look', '0deg'); };
+    this.stage.onpointermove = (event) => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || event.pointerType === 'touch') return;
+      const rect = this.stage.getBoundingClientRect();
+      this.stage.style.setProperty('--jrs-look', `${Math.max(-5, Math.min(5, (event.clientX - rect.left - rect.width / 2) / rect.width * 10))}deg`);
+    };
+    let start;
+    this.stage.onpointerdown = (event) => { start = event.clientX; this._suppressClick = false; };
+    this.stage.onpointerup = (event) => {
+      if (event.pointerType === 'touch' && start != null && Math.abs(event.clientX - start) > 45) { this._suppressClick = true; this.select(this.index + (event.clientX < start ? 1 : -1)); }
+      start = null;
+    };
+    this.renderStage();
+    const summary = host.createEl('div', { cls: 'jrs-deck-selection' });
+    this.selectedTitle = uiButton(summary, '', '', () => this.open(), 'jrs-deck-selected-title');
+    this.selectedTitle.title = '点击直接打开 PDF';
+    this.selectedMeta = summary.createEl('div', { cls: 'jrs-deck-selected-meta' });
+    const foot = host.createEl('div', { cls: 'jrs-deck-footer' });
+    uiButton(foot, '', 'chevron-left', () => this.select(this.index - 1), 'jrs-deck-arrow').setAttribute('aria-label', '上一篇文献');
+    this.position = foot.createEl('span', { cls: 'jrs-deck-position', attr: { 'aria-live': 'polite' } });
+    uiButton(foot, '', 'chevron-right', () => this.select(this.index + 1), 'jrs-deck-arrow').setAttribute('aria-label', '下一篇文献');
+    const actions = foot.createEl('div', { cls: 'jrs-deck-read-actions' });
+    this.splitButton = uiButton(actions, '分栏阅读', 'columns-2', () => this.open(this.index, true), 'od-btn');
+    this.splitButton.title = '并排打开文献笔记与 PDF';
+    this.readButton = uiButton(actions, '阅读 PDF', 'book-open', () => this.open(), 'od-btn od-btn--primary');
+    this.readButton.title = '在当前区域打开 PDF 标签页';
+    this.update();
+  }
+
+  renderStage() {
+    if (!this.stage) return;
+    this.stage.empty(); this.cards = [];
+    this.stage.classList.toggle('is-list', this.mode === 'list');
+    this.modeButton.lastElementChild.textContent = this.mode === '3d' ? '列表视图' : '3D 视图';
+    if (this.mode === 'list') {
+      this.papers.forEach((paper, index) => {
+        const row = uiButton(this.stage, '', '', () => this.open(index), 'jrs-deck-list-item');
+        row.setAttribute('aria-label', `打开 PDF：${paper.title}`); row.title = '点击直接打开 PDF';
+        row.createSpan({ cls: 'jrs-deck-list-index', text: String(index + 1).padStart(2, '0') });
+        const copy = row.createEl('div'); copy.createEl('strong', { text: paper.title });
+        copy.createEl('span', { text: `${paper.status} · ${paper.progress}%${paper.year ? ' · ' + paper.year : ''}` });
+        this.cards.push(row);
+      });
+    } else {
+      this.stage.createEl('div', { cls: 'jrs-deck-aura', attr: { 'aria-hidden': 'true' } });
+      const all = this.plugin.getPapers(); const completed = all.filter((paper) => paper.status === '已完成').length;
+      const badge = this.stage.createEl('div', { cls: 'jrs-deck-floating-stat' });
+      badge.createSpan({ text: '阅读完成率' }); badge.createEl('strong', { text: `${Math.round(completed / Math.max(1, all.length) * 100)}%` });
+      badge.createEl('small', { text: `${completed} / ${all.length} 篇文献` });
+      badge.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${completed / Math.max(1, all.length) * 100}%`;
+      // Keep only the visible cards mounted, including in larger vaults.
+      this.cards = new Array(this.papers.length).fill(null);
+    }
+    this.update();
+  }
+
+  createCard(paper, index) {
+    const card = uiButton(this.stage, '', '', () => {
+      if (this._suppressClick) { this._suppressClick = false; return; }
+      return this.open(index);
+    }, 'jrs-reading-card');
+    card.setAttribute('aria-label', `打开 PDF：${paper.title}`); card.title = '点击直接打开 PDF';
+    card.createEl('div', { cls: 'jrs-reading-card-top', text: `PAPER · ${String(index + 1).padStart(2, '0')}` });
+    const lines = card.createEl('div', { cls: 'jrs-reading-card-lines', attr: { 'aria-hidden': 'true' } });
+    for (let line = 0; line < 7; line++) lines.createEl('i');
+    card.createEl('div', { cls: 'jrs-reading-card-topic', text: paper.topics[0] || paper.project || 'RESEARCH NOTE' });
+    card.createEl('strong', { cls: 'jrs-reading-card-title', text: paper.title });
+    card.createEl('div', { cls: 'jrs-reading-card-meta', text: `${paper.year || '文献笔记'} · ${paper.status}` });
+    return card;
+  }
+
+  select(index) {
+    if (!this.papers.length) return;
+    this.index = (index + this.papers.length) % this.papers.length;
+    const paper = this.papers[this.index]; this.plugin._contextPaperPath = paper.path;
+    this.plugin.app.workspace.getLeavesOfType(VIEW_SIDE).forEach((leaf) => leaf.view.setPaper?.(paper));
+    this.update();
+    this.host.dispatchEvent(new CustomEvent('jrs-paper-select', { detail: paper.path }));
+  }
+
+  update() {
+    if (!this.papers.length) return;
+    const length = this.papers.length;
+    this.papers.forEach((paper, index) => {
+      let card = this.cards[index];
+      let offset = index - this.index;
+      if (offset > length / 2) offset -= length;
+      if (offset < -length / 2) offset += length;
+      const distance = Math.abs(offset);
+      const shown = this.mode === 'list' || distance <= 3;
+      if (!shown) { card?.remove(); this.cards[index] = null; return; }
+      if (!card) card = this.cards[index] = this.createCard(paper, index);
+      card.classList.toggle('is-active', index === this.index);
+      card.setAttribute('aria-current', index === this.index ? 'true' : 'false');
+      card.tabIndex = index === this.index ? 0 : -1;
+      card.style.visibility = shown ? 'visible' : 'hidden';
+      if (this.mode === '3d') {
+        card.style.setProperty('--jrs-card-x', `${offset * 106}px`);
+        card.style.setProperty('--jrs-card-z', `${-distance * 75}px`);
+        card.style.setProperty('--jrs-card-angle', `${offset === 0 ? 0 : -Math.sign(offset) * (24 + distance * 4)}deg`);
+        card.style.zIndex = String(20 - distance);
+      }
+    });
+    this.updateSummary();
+    if (this.position) this.position.textContent = `${String(this.index + 1).padStart(2, '0')} / ${String(length).padStart(2, '0')}`;
+    if (this.readButton) this.readButton.lastElementChild.textContent = this.papers[this.index].pdf ? '阅读 PDF' : '打开笔记';
+  }
+
+  toggleTour() {
+    if (this._tour) { window.clearInterval(this._tour); this._tour = null; }
+    else this._tour = window.setInterval(() => { if (!this._hover && document.visibilityState === 'visible' && this.host.isConnected) this.select(this.index + 1); }, 5000);
+    this.tourButton.setAttribute('aria-pressed', String(!!this._tour));
+    this.tourButton.lastElementChild.textContent = this._tour ? '停止浏览' : '自动浏览';
+  }
+}
+/* END GENERATED DECK */
+
+/* BEGIN GENERATED SECTIONS */
+// Task-specific workspaces share materials, not identical page layouts.
+class SectionWorkspace {
+  constructor(view) { this.view = view; this.plugin = view.plugin; this.app = view.app; }
+  static async metadata(app, file, predicate) {
+    if (predicate(app.metadataCache.getFileCache(file)?.frontmatter || {})) return;
+    await new Promise(resolve => {
+      const finish = () => { window.clearTimeout(timer); app.metadataCache.offref(event); resolve(); };
+      const event = app.metadataCache.on('changed', changed => { if (changed.path === file.path && predicate(app.metadataCache.getFileCache(file)?.frontmatter || {})) finish(); });
+      const timer = window.setTimeout(finish, 2500);
+    });
+  }
+  metrics(page, items) {
+    const strip = document.createElement('div'); strip.className = 'jrs-section-metrics';
+    for (const [label, value, detail] of items) {
+      const tile = strip.createEl('div', { cls: 'jrs-section-metric' });
+      tile.createSpan({ text: label }); tile.createEl('strong', { text: String(value) });
+      if (detail) tile.createEl('small', { text: detail });
+    }
+    page.prepend(strip); return strip;
+  }
+  paper(paper, host, index) {
+    const card = host.createEl('article', { cls: 'jrs-work-paper' });
+    const top = card.createEl('div', { cls: 'jrs-work-paper-top' });
+    top.createSpan({ text: `PAPER ${String(index + 1).padStart(2, '0')}` });
+    top.createSpan({ cls: 'od-status', text: paper.status, attr: { 'data-status': paper.status } });
+    uiButton(card, paper.title, '', () => this.plugin.openReading(paper), 'jrs-work-paper-title');
+    card.createEl('p', { cls: 'od-hint', text: [paper.year, paper.authorsShort, paper.venue].filter(Boolean).join(' · ') || '本地文献 · 待补充元数据' });
+    if (paper.summary) card.createEl('p', { cls: 'jrs-work-summary', text: paper.summary });
+    const position = this.plugin.pdfResearch.readingPosition(paper.pdf);
+    const count = this.plugin.pdfResearch.annotations(paper.pdf).length;
+    card.createEl('div', { cls: 'jrs-work-paper-detail', text: [position ? `读至 ${position.page} / ${position.pages} 页` : '尚无阅读位置', `${count} 条批注`, paper.priority ? paper.priority + '优先级' : ''].filter(Boolean).join(' · ') });
+    const bar = card.createEl('div', { cls: 'od-progressbar' }); bar.createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${paper.progress}%`;
+    const actions = card.createEl('div', { cls: 'jrs-row-actions' });
+    uiButton(actions, paper.pdf ? '阅读 PDF' : '打开笔记', 'book-open', () => this.plugin.openReading(paper), 'od-btn od-btn--primary od-btn--sm');
+    uiButton(actions, '笔记', 'file-text', () => this.plugin.openPaper(paper), 'od-btn od-btn--sm');
+    if (this.view.section === 'reader') uiButton(actions, '批注', 'highlighter', async () => {
+      if (!paper.pdf) return;
+      await this.plugin.openReading(paper); await this.plugin.activateSidePanel(false);
+      const side = this.app.workspace.getLeavesOfType(VIEW_SIDE)[0]?.view;
+      if (side) { side.usePdf(paper.pdf); side.tab = 'pdf'; side.showCompanionMode('assistant'); side.render(); }
+    }, 'od-btn od-btn--sm').disabled = !paper.pdf;
+    else {
+      const status = actions.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': `设置状态：${paper.title}` } });
+      STATUSES.forEach(value => status.createEl('option', { value, text: value })); status.value = paper.status;
+      status.onchange = async () => { status.disabled = true; try { await this.plugin.setPaperStatus(paper, status.value); await this.view.render(); } catch (e) { status.value = paper.status; status.disabled = false; new Notice(e.message); } };
+    }
+    return card;
+  }
+  renderReading(page, reader = false) {
+    const papers = this.plugin.getPapers();
+    this.metrics(page, [['正在阅读', papers.filter(p => p.status === '阅读中').length, '继续上次的思考'], ['等待阅读', papers.filter(p => p.status === '待读').length, '按优先级安排下一篇'], ['已保存批注', papers.reduce((n, p) => n + this.plugin.pdfResearch.annotations(p.pdf).length, 0), '关联原文与页码']]);
+    const controls = page.createEl('div', { cls: 'jrs-work-controls' });
+    const search = controls.createEl('input', { type: 'search', attr: { placeholder: '查找标题、作者、方向…', 'aria-label': '检索阅读文献' } });
+    const scope = controls.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '阅读文献范围' } });
+    [['active', '阅读队列'], ['all', '全部文献'], ['marked', '有批注的文献']].forEach(([value, text]) => scope.createEl('option', { value, text }));
+    if (reader) scope.value = 'all';
+    const sort = controls.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '阅读排序' } });
+    [['priority', '优先级优先'], ['resume', '最近阅读'], ['title', '标题排序']].forEach(([value, text]) => sort.createEl('option', { value, text }));
+    const body = page.createEl('div', { cls: reader ? 'jrs-reader-shelf' : 'jrs-queue-board' });
+    const draw = () => {
+      body.empty(); const query = search.value.trim();
+      const filtered = papers.filter(p => (scope.value === 'all' || scope.value === 'marked' && this.plugin.pdfResearch.annotations(p.pdf).length || scope.value === 'active' && ['待读', '阅读中'].includes(p.status)) && ResearchCore.matchPaperQuery(p, query));
+      filtered.sort((a, b) => sort.value === 'title' ? a.title.localeCompare(b.title, 'zh') : sort.value === 'resume' ? (this.plugin.pdfResearch.readingPosition(b.pdf)?.updated || 0) - (this.plugin.pdfResearch.readingPosition(a.pdf)?.updated || 0) : PRIORITIES.indexOf(a.priority || '低') - PRIORITIES.indexOf(b.priority || '低'));
+      if (!filtered.length) { uiEmpty(body, '当前范围没有文献', '调整关键词或查看全部文献。', '查看全部', () => { scope.value = 'all'; search.value = ''; draw(); }); return; }
+      if (reader) filtered.forEach((p, index) => this.paper(p, body, index));
+      else {
+        const groups = scope.value === 'active' ? [['阅读中', '继续阅读'], ['待读', '接下来阅读']] : [...new Set(filtered.map(p => p.status))].map(status => [status, status]);
+        groups.forEach(([status, title]) => {
+          const column = body.createEl('section', { cls: 'jrs-queue-column' }); const list = filtered.filter(p => p.status === status);
+          const heading = column.createEl('div', { cls: 'jrs-section-heading' }); heading.createEl('h2', { text: title }); heading.createSpan({ cls: 'jrs-count-pill', text: String(list.length) });
+          if (!list.length) column.createEl('p', { cls: 'od-hint', text: '这一列暂时没有文献。' });
+          list.forEach((p, index) => this.paper(p, column, index));
+        });
+      }
+    };
+    search.oninput = scope.onchange = sort.onchange = draw; draw();
+  }
+  renderGraph(page) {
+    const papers = this.plugin.getPapers(); const topics = [...new Set(papers.flatMap(p => p.topics.length ? p.topics : ['未分类']))];
+    this.metrics(page, [['文献节点', papers.length, '当前来源目录'], ['研究方向', topics.length, '点击节点筛选文献'], ['归属连线', papers.reduce((n, p) => n + Math.max(1, p.topics.length), 0), '表示主题归属，不代表引用关系']]);
+    const controls = page.createEl('div', { cls: 'jrs-work-controls' });
+    uiButton(controls, '导出 / 更新 Canvas', 'git-fork', () => this.plugin.generateGraphCanvas(true), 'od-btn od-btn--primary');
+    uiButton(controls, '打开 Canvas', 'external-link', () => this.plugin.openGraphCanvas(), 'od-btn').disabled = !this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
+    const layout = page.createEl('div', { cls: 'jrs-graph-explorer' });
+    const map = layout.createEl('section', { cls: 'jrs-card jrs-live-map' });
+    const chips = map.createEl('div', { cls: 'jrs-row-actions' });
+    const list = layout.createEl('section', { cls: 'jrs-card jrs-graph-papers' });
+    let selected = '';
+    const draw = () => {
+      list.empty(); chips.empty();
+      [['', '全部方向'], ...topics.map(t => [t, t])].forEach(([value, label]) => {
+        const button = uiButton(chips, label, '', () => { selected = value; draw(); }, `od-filter${selected === value ? ' is-active' : ''}`); button.setAttribute('aria-pressed', String(selected === value));
+      });
+      map.querySelector('svg')?.remove();
+      const ns = 'http://www.w3.org/2000/svg'; const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox', '0 0 600 450'); svg.setAttribute('aria-label', '当前文献的主题归属图'); svg.setAttribute('role', 'img');
+      const element = (tag, attrs, text) => { const node = document.createElementNS(ns, tag); Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, String(v))); if (text) node.textContent = text; svg.appendChild(node); return node; };
+      const topicNodes = topics.map((topic, i) => { const angle = i / Math.max(1, topics.length) * Math.PI * 2 - Math.PI / 2; return { topic, x: 300 + Math.cos(angle) * 135, y: 225 + Math.sin(angle) * 135 }; });
+      papers.forEach((p, i) => { const angle = i / Math.max(1, papers.length) * Math.PI * 2; const x = 300 + Math.cos(angle) * 205, y = 225 + Math.sin(angle) * 205;
+        const included = !selected || p.topics.includes(selected) || selected === '未分类' && !p.topics.length;
+        topicNodes.filter(t => p.topics.includes(t.topic) || t.topic === '未分类' && !p.topics.length).forEach(t => element('line', { x1: x, y1: y, x2: t.x, y2: t.y, class: included ? 'is-highlighted' : '' }));
+        const dot = element('circle', { cx: x, cy: y, r: included ? 5 : 3, class: included ? 'is-highlighted' : '' }); const title = document.createElementNS(ns, 'title'); title.textContent = p.title; dot.appendChild(title);
+      });
+      topicNodes.forEach(t => { const dot = element('circle', { cx: t.x, cy: t.y, r: 12, class: 'jrs-topic-node' }); dot.onclick = () => { selected = t.topic; draw(); }; element('text', { x: t.x, y: t.y + 28, 'text-anchor': 'middle' }, t.topic.length > 12 ? t.topic.slice(0, 12) + '…' : t.topic); });
+      map.appendChild(svg);
+      const filtered = papers.filter(p => !selected || p.topics.includes(selected) || selected === '未分类' && !p.topics.length);
+      list.createEl('h2', { text: `${selected || '全部文献'} · ${filtered.length}` });
+      filtered.forEach(p => uiButton(list, p.title, 'file-text', () => this.plugin.openReading(p), 'jrs-graph-paper-link'));
+      if (!papers.length) list.createEl('p', { cls: 'od-hint', text: '选择有 PDF 的文献来源目录后显示关系。' });
+    }; draw();
+  }
+  renderDiscover(page) {
+    const view = this.view;
+    view._discoverSrc ||= 'arxiv'; view._discoverQueries ||= {}; view._discoverResults ||= {};
+    const source = view._discoverSrc;
+    const hero = page.createEl('section', { cls: 'jrs-discovery-hero' });
+    hero.createSpan({ cls: 'jrs-work-eyebrow', text: 'DISCOVER / 发现新的研究线索' });
+    hero.createEl('h2', { text: '找到值得读的下一篇' });
+    hero.createEl('p', { text: '从预印本到正式发表的论文，检索、筛选，再收进你的研究资料。' });
+    const layout = page.createEl('div', { cls: 'jrs-discovery-layout' });
+    const control = layout.createEl('section', { cls: 'jrs-card jrs-discovery-control' });
+    control.createEl('h3', { text: '01 / 选择检索来源' });
+    for (const [id, icon, name, desc] of [['arxiv', 'file-search', 'arXiv', '探索最新的预印本'], ['crossref', 'library', 'Crossref', '检索正式发表的论文']]) {
+      const button = uiButton(control, '', '', async () => { view._discoverSrc = id; await view.render(); }, `jrs-source-option${source === id ? ' is-active' : ''}`);
+      setIcon(button.createSpan(), icon); const copy = button.createEl('div'); copy.createEl('strong', { text: name }); copy.createEl('span', { text: desc });
+      button.setAttribute('aria-pressed', String(source === id)); button.setAttribute('aria-label', name + ' 检索来源');
+    }
+    control.createEl('h3', { text: '02 / 描述你的研究方向' });
+    const form = control.createEl('div', { cls: 'jrs-discover-form' });
+    const input = form.createEl('input', { type: 'text', attr: { placeholder: '例如 satellite scheduling', 'aria-label': '论文检索关键词' } });
+    input.value = view._discoverQueries[source] ?? (source === 'arxiv' ? this.plugin.settings.arxivQuery : '');
+    input.oninput = () => { view._discoverQueries[source] = input.value; };
+    const tagHost = document.createElement('div'); tagHost.className = 'jrs-direction-tags'; form.before(tagHost);
+    const tagEditor = control.createEl('details', { cls: 'jrs-direction-editor' });
+    tagEditor.createEl('summary', { text: '＋ 定制研究方向标签' });
+    const nameInput = tagEditor.createEl('input', { type: 'text', attr: { placeholder: '标签名称，例如：多星协同', 'aria-label': '方向标签名称', maxlength: '40' } });
+    const queryInput = tagEditor.createEl('textarea', { attr: { placeholder: '对应的关键词或完整检索式', 'aria-label': '方向标签检索式', rows: '3' } });
+    queryInput.value = input.value;
+    const drawTags = () => {
+      tagHost.empty();
+      const tags = this.plugin.settings.discoveryTags || [];
+      for (const tag of tags) {
+        const wrap = tagHost.createEl('span', { cls: 'jrs-direction-tag' });
+        const chip = uiButton(wrap, tag.label, '', () => { input.value = tag.query; view._discoverQueries[source] = tag.query; queryInput.value = tag.query; nameInput.value = tag.label; drawTags(); input.focus(); }, input.value === tag.query ? 'is-active' : '');
+        chip.title = tag.query; chip.setAttribute('aria-pressed', String(input.value === tag.query));
+        const remove = uiButton(wrap, '', 'x', async () => { this.plugin.settings.discoveryTags = tags.filter(entry => entry.label !== tag.label); await this.plugin.saveSettings(); drawTags(); }, 'jrs-direction-remove'); remove.setAttribute('aria-label', '删除方向标签：' + tag.label);
+      }
+      if (!tags.length) tagHost.createEl('p', { cls: 'od-hint', text: '把常用关键词保存为方向标签，之后点击即可填入。' });
+    };
+    uiButton(tagEditor, '保存方向标签', 'plus', async () => {
+      const label = nameInput.value.trim(), query = queryInput.value.trim();
+      if (!label || !query) { new Notice('填写标签名称和检索关键词后保存'); return; }
+      const tags = (this.plugin.settings.discoveryTags || []).filter(tag => tag.label !== label);
+      tags.push({ label, query }); this.plugin.settings.discoveryTags = tags; await this.plugin.saveSettings();
+      input.value = query; view._discoverQueries[source] = query; tagEditor.open = false; drawTags();
+    }, 'od-btn od-btn--sm');
+    input.oninput = () => { view._discoverQueries[source] = input.value; drawTags(); };
+    drawTags();
+    const amount = form.createEl('label'); amount.createSpan({ text: '结果数量' });
+    const num = amount.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '检索结果数量' } });
+    [5, 8, 12, 20].forEach(n => num.createEl('option', { value: String(n), text: n + ' 篇' })); num.value = ['5','8','12','20'].includes(String(this.plugin.settings.arxivMax)) ? String(this.plugin.settings.arxivMax) : '8';
+    const btn = uiButton(form, '检索论文', 'search', () => run(), 'od-btn od-btn--primary');
+    const hint = control.createEl('p', { cls: 'od-hint', text: '建议使用英文关键词。检索不消耗 AI API 额度；翻译和文献问答在研究助手中进行。' });
+    hint.style.lineHeight = '1.8';
+    const results = layout.createEl('section', { cls: 'jrs-discovery-results-pane' });
+    const head = results.createEl('div', { cls: 'jrs-section-heading' }); head.createEl('h2', { text: '发现结果' }); const count = head.createSpan({ text: source === 'arxiv' ? 'arXiv 预印本' : 'Crossref 期刊论文' });
+    const host = results.createEl('div', { cls: 'jrs-discover-results' });
+    const draw = items => {
+      host.empty(); count.textContent = `${source === 'arxiv' ? 'arXiv' : 'Crossref'} · ${items.length} 篇`;
+      if (!items.length) { uiEmpty(host, '暂时没有匹配的论文', '尝试缩短关键词，或切换另一个检索来源。', '修改关键词', () => input.focus(), 'search'); return; }
+      items.forEach((item, index) => {
+        const card = host.createEl('article', { cls: 'jrs-card jrs-discovery-result' });
+        const meta = card.createEl('div', { cls: 'jrs-work-paper-top' }); meta.createSpan({ text: `${source.toUpperCase()} / ${String(index + 1).padStart(2, '0')}` }); meta.createSpan({ text: item.date || item.year || '' });
+        const title = uiButton(card, item.title, '', () => this.plugin.openResearchWeb(item.url || (item.doi ? 'https://doi.org/' + item.doi : source === 'arxiv' ? 'https://arxiv.org/' : 'https://search.crossref.org/')), 'jrs-work-paper-title jrs-row-title');
+        card.createEl('p', { cls: 'od-hint', text: [item.authors, item.venue].filter(Boolean).join(' · ') });
+        if (item.summary) { const details = card.createEl('details', { cls: 'jrs-result-abstract' }); details.createEl('summary', { text: '阅读摘要' }); details.createEl('p', { text: item.summary }); }
+        const actions = card.createEl('div', { cls: 'jrs-row-actions' });
+        const existing = this.plugin.getPaperNotes().find(p => p.title.toLowerCase() === item.title.toLowerCase());
+        let note = existing?.file;
+        const add = uiButton(actions, existing ? '已入库 · 打开笔记' : '收进文献库', existing ? 'file-text' : 'plus', async () => {
+          if (note) { await this.plugin.smartOpenFile(note); return; }
+          note = await (source === 'crossref' ? this.plugin.crossrefToLibrary(item) : this.plugin.arxivToLibrary(item));
+          add.lastElementChild.textContent = '已入库 · 打开笔记'; new Notice('文献信息已保存；点击可打开笔记。PDF 需另行下载。');
+        }, 'od-btn od-btn--primary od-btn--sm');
+        uiButton(actions, '右栏查看原文', 'panel-right', () => title.click(), 'od-btn od-btn--sm');
+      });
+    };
+    const run = async () => {
+      const query = input.value.trim();
+      if (!query) { new Notice('请输入检索关键词'); input.focus(); return; }
+      view._discoverQueries[source] = query; const n = Number(num.value);
+      btn.disabled = true; btn.lastElementChild.textContent = '正在检索…'; host.empty();
+      host.createEl('div', { cls: 'jrs-search-loading', text: `正在从 ${source === 'arxiv' ? 'arXiv' : 'Crossref'} 检索论文…`, attr: { role: 'status' } });
+      try {
+        let items;
+        if (source === 'arxiv') { this.plugin.settings.arxivQuery = query; this.plugin.settings.arxivMax = n; await this.plugin.saveSettings(); items = (await this.plugin.fetchArxiv(true)).items.slice(0,n); }
+        else items = await this.plugin.searchCrossref(query,n);
+        view._discoverResults[source] = items;
+        if (host.isConnected) draw(items);
+      } catch (e) { if (host.isConnected) { host.empty(); uiEmpty(host,'检索没有完成',e.message,'重新检索',()=>btn.click(),'wifi-off'); } }
+      finally { btn.disabled = false; btn.lastElementChild.textContent = '检索论文'; }
+    };
+    input.onkeydown = event => { if (event.key === 'Enter' && !btn.disabled) { event.preventDefault(); btn.click(); } };
+    const items = view._discoverResults[source] || (source === 'arxiv' ? this.plugin.settings.arxivCache?.items?.slice(0,Number(num.value)) : null);
+    if (items) draw(items);
+    else { uiEmpty(host, '下一篇灵感，从一个关键词开始', '选择左侧来源，输入研究主题。结果会显示标题、作者和摘要，原文可直接在右栏查看。', '填写检索关键词', () => input.focus(), 'sparkles'); }
+    results.createEl('p', { cls: 'jrs-work-notice', text: '外部检索结果不计入当前文件夹的本地 PDF 数量。入库保存文献信息，下载 PDF 后可本地阅读、批注和翻译。' });
+  }
+  async enhance(page) {
+    const section = this.view.section; const papers = this.plugin.getPapers();
+    page.classList.add('jrs-workspace-' + section);
+    if (section === 'home') {
+      const heading = page.querySelector('.jrs-board-heading .jrs-row-actions'); const board = this.view._board;
+      if (heading && board) {
+        board.hidden = !!this.plugin.settings.boardCollapsed;
+        const button = uiButton(heading, board.hidden ? '展开桌面' : '收起桌面', 'chevrons-up-down', async () => { board.hidden = !board.hidden; this.plugin.settings.boardCollapsed = board.hidden; button.lastElementChild.textContent = board.hidden ? '展开桌面' : '收起桌面'; await this.plugin.saveSettings(); if (!board.hidden) { this.view.computeMetrics(); this.view.applyPositions(); } }, 'od-btn od-btn--sm');
+      } return;
+    }
+    if (section === 'progress') {
+      const sections = await this.plugin.getSurveyProgress();
+      const done = sections.reduce((n, s) => n + s.done, 0), total = sections.reduce((n, s) => n + s.total, 0);
+      this.metrics(page, [['写作完成', total ? Math.round(done / total * 100) + '%' : '0%', `${done} / ${total} 项任务`], ['综述章节', sections.length, '逐章推进研究'], ['研究问题', (await this.plugin.getQuestions()).filter(q => q.status !== 'answered').length, '待回答的问题']]);
+      const survey = page.querySelector('section');
+      const grid = document.createElement('div'); grid.className = 'jrs-chapter-grid';
+      [...survey.querySelectorAll(':scope > .od-progress-item')].forEach((item, i) => { item.dataset.chapter = String(i + 1).padStart(2, '0'); grid.appendChild(item); });
+      survey.appendChild(grid);
+    }
+    if (section === 'submit') {
+      const subs = this.plugin.getSubmissions();
+      this.metrics(page, [['进行中的投稿', subs.filter(s => !['已接收', '已拒稿'].includes(s.status)).length, '写作、审稿与修回'], ['已接收', subs.filter(s => s.status === '已接收').length, '科研成果归档'], ['设有截稿日', subs.filter(s => s.deadline).length, '在条目中查看剩余天数']]);
+      const groups = [...page.querySelectorAll('.jrs-submit-group')];
+      if (groups.length) { const board = document.createElement('div'); board.className = 'jrs-submission-board'; groups[0].before(board); groups.forEach(g => board.appendChild(g)); }
+      const sections = [...page.querySelectorAll(':scope > section')];
+      const lookup = sections.find(el => el.querySelector('h2')?.textContent === '期刊速查器');
+      const pipeline = sections.find(el => el.querySelector('h2')?.textContent === '我的投稿管线');
+      const journals = sections.find(el => el.querySelector('h2')?.textContent === '目标期刊速查');
+      const tabs = document.createElement('nav'); tabs.className = 'jrs-submission-tabs'; tabs.setAttribute('aria-label','投稿工作区视图');
+      const strip = page.querySelector('.jrs-section-metrics'); strip.before(tabs);
+      const modes = [['pipeline','kanban','我的投稿',pipeline], ['lookup','search','期刊速查',lookup], ['journals','library','目标期刊',journals]];
+      const buttons = {};
+      const activate = id => { this.view._submissionTab = id; for (const [key,,,el] of modes) if(el) { el.hidden = key !== id; buttons[key]?.setAttribute('aria-pressed',String(key===id)); buttons[key]?.classList.toggle('is-active',key===id); } strip.hidden = id !== 'pipeline'; };
+      for (const [id,icon,label] of modes) buttons[id] = uiButton(tabs,label,icon,()=>activate(id),'jrs-submission-tab');
+      activate(this.view._submissionTab || 'pipeline');
+      if (pipeline) { pipeline.addClass('jrs-pipeline-workspace'); if (!subs.length) { const empty=pipeline.querySelector('.od-task-empty'); if(empty) { empty.empty(); setIcon(empty.createSpan(),'send'); empty.createEl('h3',{text:'让下一篇论文，有清晰的下一步'}); empty.createEl('p',{text:'建立投稿档案，记录目标期刊、截稿日和每次审稿进展。'}); uiButton(empty,'建立第一项投稿','plus',()=>new AddSubmissionModal(this.plugin,()=>this.view.render()).open(),'od-btn od-btn--primary'); } } }
+      if (journals) {
+        const toolbar=journals.createEl('div',{cls:'jrs-work-controls'});
+        const input=toolbar.createEl('input',{type:'search',cls:'jrs-journal-search',attr:{placeholder:'按期刊名称、研究方向或出版社筛选…','aria-label':'筛选目标期刊'}});
+        const density=toolbar.createEl('select',{cls:'jrs-select',attr:{'aria-label':'目标期刊卡片密度'}}); density.createEl('option',{value:'compact',text:'紧凑卡片'}); density.createEl('option',{value:'comfortable',text:'舒展卡片'}); density.value=this.plugin.settings.journalDensity || 'compact';
+        const setDensity=()=>journals.classList.toggle('is-comfortable',density.value==='comfortable'); setDensity();
+        density.onchange=async()=>{this.plugin.settings.journalDensity=density.value;setDensity();await this.plugin.saveSettings();};
+        journals.querySelector('.jrs-journal-grid').before(toolbar);
+        const summary=journals.createEl('p',{cls:'od-hint'}); toolbar.after(summary);
+        const filter=()=>{const q=input.value.trim().toLowerCase();let count=0;journals.querySelectorAll('.jrs-journal').forEach(card=>{card.hidden=!card.textContent.toLowerCase().includes(q);if(!card.hidden)count++;});summary.textContent=count ? `${count} 本参考期刊` : '没有匹配的期刊，请调整关键词。';};input.oninput=filter;filter();
+        journals.querySelector('.jrs-section-heading > span').textContent='内置参考目录 · 期刊分区请以相应年份官方目录为准';
+        journals.querySelectorAll('.jrs-journal').forEach(card=>{const note=card.querySelector('.jrs-journal-note');if(note){const details=card.createEl('details',{cls:'jrs-journal-details'});details.createEl('summary',{text:'详细说明'});details.appendChild(note);}});
+        journals.querySelectorAll('.jrs-journal-link').forEach(link=>{link.onclick=event=>{event.preventDefault();this.plugin.openResearchWeb(link.href);};});
+      }
+    }
+    if (section === 'ask') {
+      this.metrics(page, [['检索文献', papers.length, '来自当前选择的文件夹'], ['回答存档', (await this.plugin.getAskLogToday()).length, '今日已保存的问答'], ['AI 配置', this.plugin.settings.ai.apiKey ? '已配置' : '待配置', this.plugin.settings.ai.model || '设置模型后开始提问']]);
+      const row = page.querySelector('.jrs-ask-input');
+      uiButton(row, '在右栏问 DeepSeek', 'globe', () => this.plugin.openResearchWeb('https://chat.deepseek.com/'), 'od-btn');
+    }
+  }
+  static settings(tab) {
+    const root = tab.containerEl; root.addClass('jrs-settings');
+    const groups = []; let group;
+    [...root.children].forEach(child => { if (child.tagName === 'H3') { group = document.createElement('section'); group.className = 'jrs-settings-group'; groups.push({ title: child.textContent, el: group }); } if (group) group.appendChild(child); });
+    root.empty();
+    const hero = root.createEl('header', { cls: 'jrs-settings-hero' }); setIcon(hero.createSpan(), 'settings-2');
+    const text = hero.createEl('div'); text.createEl('h2', { text: '工作站设置' }); text.createEl('p', { text: `Jensen ${tab.plugin.manifest.version} · 更适合你的阅读与研究习惯` });
+    const search = root.createEl('input', { type: 'search', cls: 'jrs-settings-search', attr: { placeholder: '查找设置…', 'aria-label': '搜索工作站设置' } });
+    const layout = root.createEl('div', { cls: 'jrs-settings-layout' }); const nav = layout.createEl('nav', { attr: { 'aria-label': '设置分类' } }); const content = layout.createEl('div');
+    const draw = () => { nav.empty(); const query = search.value.trim().toLowerCase();
+      groups.forEach(({ title, el }, index) => {
+        const selected = title === (tab._groupName || groups[0].title);
+        const button = uiButton(nav, title, '', () => { tab._groupName = title; search.value = ''; draw(); }, selected && !query ? 'is-active' : ''); button.setAttribute('aria-pressed', String(selected && !query));
+        el.hidden = !query && !selected; let matches = 0;
+        el.querySelectorAll('.setting-item').forEach(row => { row.hidden = !!query && !row.textContent.toLowerCase().includes(query); if (!row.hidden) matches++; });
+        if (query) el.hidden = !matches && !title.toLowerCase().includes(query);
+      });
+    };
+    groups.forEach(g => content.appendChild(g.el)); search.oninput = draw; draw();
+  }
+}
+/* END GENERATED SECTIONS */
 
 class DashboardView extends ItemView {
   constructor(leaf, plugin) {
@@ -388,30 +2017,52 @@ class DashboardView extends ItemView {
 
   getViewType() { return VIEW_DASHBOARD; }
   getDisplayText() { return 'Jensen 科研工作站'; }
-  getIcon() { return 'telescope'; }
+  getIcon() { return 'book-open'; }
 
-  async onOpen() { await this.render(); }
+  async onOpen() {
+    this.registerEvent(this.app.workspace.on('resize', () => {
+      if (this.section === 'home' && this._board?.isConnected) { this.computeMetrics(); this.applyPositions(); }
+    }));
+    this.registerEvent(this.app.metadataCache.on('changed', (file) => {
+      if (!file.path.startsWith(this.plugin.settings.libFolder + '/') && file.path !== this.plugin.settings.surveyNote) return;
+      window.clearTimeout(this._refreshTimer);
+      this._refreshTimer = window.setTimeout(() => {
+        if (this.section === 'library') this._panel?.renderList();
+        else if (!this.editing && !this.contentEl.contains(document.activeElement)) this.render();
+      }, 180);
+    }));
+    await this.render();
+  }
   onClose() {
     if (this._unsub) this._unsub();
     if (this._ro) this._ro.disconnect();
+    this._readingDeck?.destroy(); this._sidebarLife?.destroy();
+    window.clearTimeout(this._refreshTimer);
   }
 
-  async goto(section) { this.section = section; await this.render(); }
+  async goto(section) {
+    if (!SECTIONS.some((item) => item.id === section)) return;
+    this.section = section; await this.render();
+  }
 
   async render() {
+    this._readingDeck?.destroy(); this._sidebarLife?.destroy();
+    if (this._ro) this._ro.disconnect();
     const root = this.contentEl;
-    root.empty();
-    root.addClass('jrs-view');
-
+    root.empty(); root.addClass('jrs-view'); root.dataset.section = this.section;
     const shell = root.createEl('div', { cls: 'jrs-shell' });
-    if (this.plugin.settings.sidebarMode !== 'hidden') {
-      shell.appendChild(this.buildSidebar());
-    }
+    if (this.plugin.settings.sidebarMode !== 'hidden') shell.appendChild(this.buildSidebar());
     const main = shell.createEl('div', { cls: 'jrs-main' });
+    const mobile = main.createEl('div', { cls: `jrs-mobile-nav${this.plugin.settings.sidebarMode === 'hidden' ? ' is-required' : ''}` });
+    setIcon(mobile.createSpan(), 'book-open');
+    const select = mobile.createEl('select', { attr: { 'aria-label': '切换工作站页面' } });
+    SECTIONS.forEach((section) => select.createEl('option', { value: section.id, text: section.label }));
+    select.value = this.section; select.onchange = () => this.goto(select.value);
     if (this.section !== 'home') main.appendChild(this.buildTopbar(this.section === 'library'));
-
-    this._page = main.createEl('div', { cls: 'jrs-page' });
-    await this.renderSection(this._page);
+    this._page = main.createEl('div', { cls: `jrs-page jrs-page-${this.section}` });
+    const page = this._page;
+    await this.renderSection(page);
+    if (this._page === page) await new SectionWorkspace(this).enhance(page);
   }
 
   /* ---------- 左侧栏（对标 OS sidebar） ---------- */
@@ -420,48 +2071,50 @@ class DashboardView extends ItemView {
     const mode = this.plugin.settings.sidebarMode;
     const aside = document.createElement('aside');
     aside.className = `jrs-sidebar${mode === 'icon' ? ' is-icon' : ''}`;
-
     const brand = aside.createEl('div', { cls: 'jrs-brand' });
-    const mark = brand.createEl('span', { cls: 'jrs-brand-mark' });
-    setIcon(mark, 'telescope');
+    setIcon(brand.createEl('span', { cls: 'jrs-brand-mark' }), 'book-open');
     if (mode !== 'icon') {
       const copy = brand.createEl('div', { cls: 'jrs-brand-copy' });
-      copy.createEl('div', { cls: 'jrs-brand-name', text: 'Jensen 科研工作站' });
-      copy.createEl('div', { cls: 'jrs-brand-sub', text: 'Research Workstation' });
-    } else {
-      brand.setAttribute('title', 'Jensen 科研工作站');
+      copy.createEl('div', { cls: 'jrs-brand-name', text: 'Jensen' });
+      copy.createEl('div', { cls: 'jrs-brand-sub', text: '科研工作站' });
     }
-
-    const nav = aside.createEl('nav', { cls: 'jrs-nav' });
-    SECTIONS.forEach((sec) => {
-      const b = nav.createEl('button', {
-        cls: `jrs-nav-item${this.section === sec.id ? ' is-active' : ''}`,
-        attr: { title: sec.label },
+    const papers = this.plugin.getPapers();
+    if (mode !== 'icon') {
+      const workspace = aside.createEl('div', { cls: 'jrs-workspace-badge' });
+      setIcon(workspace.createSpan(), 'folder-open');
+      workspace.createSpan({ text: this.app.vault.getName() });
+      workspace.createSpan({ cls: 'jrs-workspace-dot', attr: { title: '本地知识库' } });
+    }
+    const nav = aside.createEl('nav', { cls: 'jrs-nav', attr: { 'aria-label': '工作站导航' } });
+    const groups = [
+      ['工作空间', ['home', 'queue', 'library', 'reader']],
+      ['研究与发现', ['discover', 'graph', 'progress', 'ask']],
+      ['发表', ['submit']],
+    ];
+    const counts = { library: papers.length, queue: papers.filter((p) => p.status === '阅读中').length };
+    groups.forEach(([name, ids]) => {
+      const group = nav.createEl('div', { cls: 'jrs-nav-group' });
+      if (mode !== 'icon') group.createEl('div', { cls: 'jrs-nav-group-label', text: name });
+      ids.forEach((id) => {
+        const sec = SECTIONS.find((section) => section.id === id);
+        const button = uiButton(group, mode !== 'icon' ? sec.label : '', sec.icon, () => this.goto(id), `jrs-nav-item${this.section === id ? ' is-active' : ''}`);
+        button.title = sec.label; button.setAttribute('aria-label', sec.label);
+        if (this.section === id) button.setAttribute('aria-current', 'page');
+        if (mode !== 'icon' && counts[id] != null) button.createSpan({ cls: 'jrs-nav-count', text: String(counts[id]) });
       });
-      const ic = b.createSpan({ cls: 'jrs-nav-icon' });
-      setIcon(ic, sec.icon);
-      if (mode !== 'icon') b.createSpan({ cls: 'jrs-nav-label', text: sec.label });
-      b.onclick = () => this.goto(sec.id);
     });
 
     const bottom = aside.createEl('div', { cls: 'jrs-sidebar-bottom' });
     if (mode !== 'icon') {
-      const papers = this.plugin.getPapers();
-      bottom.createEl('div', { cls: 'jrs-meta-label', text: '当前文献库' });
-      bottom.createEl('div', { cls: 'jrs-vault-name', text: this.app.vault.getName() });
-      bottom.createEl('div', {
-        cls: 'jrs-vault-stats',
-        text: `${papers.length} 篇文献 · ${papers.filter((x) => x.status === '阅读中').length} 篇阅读中`,
-      });
+      uiButton(bottom, '工作站设置', 'settings-2', () => {
+        this.app.setting.open(); this.app.setting.openTabById(this.plugin.manifest.id);
+      }, 'jrs-nav-item');
     }
-    const collapse = bottom.createEl('button', { cls: 'jrs-nav-item jrs-sidebar-toggle', attr: { title: '切换侧栏宽度' } });
-    const cic = collapse.createSpan({ cls: 'jrs-nav-icon' });
-    setIcon(cic, mode === 'icon' ? 'chevrons-right' : 'chevrons-left');
-    collapse.onclick = async () => {
+    const collapse = uiButton(bottom, mode !== 'icon' ? '收起侧栏' : '', mode === 'icon' ? 'panel-left-open' : 'panel-left-close', async () => {
       this.plugin.settings.sidebarMode = mode === 'icon' ? 'full' : 'icon';
-      await this.plugin.saveSettings();
-      this.render();
-    };
+      await this.plugin.saveSettings(); await this.render();
+    }, 'jrs-nav-item jrs-sidebar-toggle');
+    collapse.setAttribute('aria-label', '切换侧栏宽度');
     return aside;
   }
 
@@ -477,24 +2130,25 @@ class DashboardView extends ItemView {
     title.createEl('p', { text: sec.sub });
 
     const tools = bar.createEl('div', { cls: 'jrs-tools' });
+    buildThemeToggle(tools, this.plugin);
     if (!omitSearch) {
       const omni = tools.createEl('div', { cls: 'jrs-omnibox' });
       this.buildOmnibox(omni);
     }
 
     const primary = tools.createEl('button', { cls: 'od-btn od-btn--primary' });
-    let pIcon = 'plus'; let pLabel = '手动添加';
+    let pIcon = 'plus'; let pLabel = '添加文献';
     if (this.section === 'discover') { pIcon = 'refresh-cw'; pLabel = '立即发现'; }
     if (this.section === 'progress') { pIcon = 'sprout'; pLabel = 'AI 综述'; }
     if (this.section === 'graph') { pIcon = 'git-fork'; pLabel = '重建图谱'; }
     if (this.section === 'queue') { pIcon = 'list-plus'; pLabel = '添加文献'; }
-    if (this.section === 'reader') { pIcon = 'columns-2'; pLabel = '继续上次阅读'; }
+    if (this.section === 'reader') { pIcon = 'book-open'; pLabel = '继续上次阅读'; }
     if (this.section === 'submit') { pIcon = 'plus'; pLabel = '新建投稿'; }
     if (this.section === 'ask') { pIcon = 'inbox'; pLabel = '快速记想法'; }
     setIcon(primary.createSpan(), pIcon);
     primary.createSpan({ text: pLabel });
     primary.onclick = async () => {
-      if (this.section === 'discover') { new Notice('正在抓取 arXiv 最新论文…'); await this.plugin.fetchArxiv(true); this.render(); return; }
+      if (this.section === 'discover') { this._page.querySelector('.jrs-discover-form button')?.click(); return; }
       if (this.section === 'progress') { new AiSynthesisModal(this.plugin).open(); return; }
       if (this.section === 'graph') { await this.plugin.generateGraphCanvas(true); this.render(); return; }
       if (this.section === 'reader') { this.continueLastReading(); return; }
@@ -507,7 +2161,7 @@ class DashboardView extends ItemView {
 
   continueLastReading() {
     const reading = this.plugin.getPapers().filter((p) => p.status === '阅读中');
-    const target = reading[0] || this.plugin.getPapersSorted('added')[0];
+    const target = this.plugin.getPapers().find((p) => p.path === this.plugin.settings.lastReadingPath) || reading[0] || this.plugin.getPapersSorted('added')[0];
     if (!target) { new Notice('文献库为空'); return; }
     this.plugin.openReading(target);
   }
@@ -515,7 +2169,7 @@ class DashboardView extends ItemView {
   buildOmnibox(host) {
     const box = host.createEl('div', { cls: 'od-search jrs-omnibox-box' });
     setIcon(box.createSpan(), 'search');
-    const input = box.createEl('input', { type: 'text', placeholder: '搜索…' });
+    const input = box.createEl('input', { type: 'text', placeholder: '搜索文献、笔记和命令…', attr: { 'aria-label': '搜索文献、笔记和命令' } });
     box.createEl('span', { cls: 'jrs-omni-kbd', text: '↵' });
     const panel = host.createEl('div', { cls: 'jrs-omnibox-panel' });
     let active = -1; let items = [];
@@ -586,12 +2240,12 @@ class DashboardView extends ItemView {
   async renderSection(page) {
     switch (this.section) {
       case 'home': return this.renderHome(page);
-      case 'discover': return this.renderDiscover(page);
-      case 'queue': return this.renderQueue(page);
+      case 'discover': return new SectionWorkspace(this).renderDiscover(page);
+      case 'queue': return new SectionWorkspace(this).renderReading(page);
       case 'library': return this.renderLibrarySection(page);
-      case 'graph': return await this.renderGraph(page);
+      case 'graph': return new SectionWorkspace(this).renderGraph(page);
       case 'progress': return await this.renderProgress(page);
-      case 'reader': return this.renderReader(page);
+      case 'reader': return new SectionWorkspace(this).renderReading(page, true);
       case 'submit': return this.renderSubmit(page);
       case 'ask': return this.renderAsk(page);
       default: return this.renderHome(page);
@@ -603,20 +2257,78 @@ class DashboardView extends ItemView {
   async renderHome(page) {
     this.packLayout();
     page.appendChild(this.buildHero());
-    this._board = page.createEl('div', { cls: 'jrs-board' });
-    if (this.editing) this._board.addClass('is-editing');
+    await this.buildHomeOverview(page);
+    if (this._page !== page) return;
+    const heading = page.createEl('div', { cls: 'jrs-board-heading' });
+    const copy = heading.createEl('div');
+    copy.createEl('h2', { text: '我的研究桌面' });
+    copy.createEl('p', { text: this.editing ? '拖动吸附网格，松开后自动避让' : '专注、计划与研究线索，按你的节奏排列' });
+    const actions = heading.createEl('div', { cls: 'jrs-row-actions' });
+    uiButton(actions, '卡片管理', 'sliders-horizontal', () => new CardManagerModal(this.plugin, () => this.render()).open(), 'od-btn od-btn--sm');
+    uiButton(actions, '自动整理', 'align-start-vertical', async () => {
+      this._previousBoardLayout = structuredClone(this.plugin.settings.layout);
+      for (const def of this.visibleCards()) { const layout = this.layoutOf(def.id); layout.x = -1; layout.y = -1; }
+      this.packLayout(); await this.plugin.saveSettings(); await this.render();
+    }, 'od-btn od-btn--sm');
+    if (this._previousBoardLayout) uiButton(actions, '撤销整理', 'undo-2', async () => {
+      this.plugin.settings.layout = this._previousBoardLayout; this._previousBoardLayout = null;
+      await this.plugin.saveSettings(); await this.render();
+    }, 'od-btn od-btn--sm');
+    uiButton(actions, this.editing ? '完成排版' : '编辑布局', this.editing ? 'check' : 'layout-dashboard', () => this.toggleEditing(), `od-btn od-btn--sm${this.editing ? ' od-btn--primary' : ''}`);
+    this._board = page.createEl('div', { cls: `jrs-board${this.editing ? ' is-editing' : ''}` });
     this._shells.clear();
     for (const def of this.visibleCards()) {
       try {
         const shell = await this.buildShell(def);
-        this._board.appendChild(shell);
-        this._shells.set(def.id, shell);
-      } catch (e) { console.error(`[JRS] 卡片「${def.id}」渲染失败`, e); }
+        if (this._page !== page) return;
+        this._board.appendChild(shell); this._shells.set(def.id, shell);
+      } catch (error) { console.error(`[JRS] 卡片「${def.id}」渲染失败`, error); }
     }
-    this.computeMetrics();
-    this.applyPositions();
-    this.setupBoardObserver();
-    this.plugin.ensureArxivFresh().then((r) => { if (r?.justFetched) this.softRefresh('arxiv'); });
+    this.computeMetrics(); this.applyPositions(); this.setupBoardObserver();
+    if (this.visibleCards().some((card) => card.id === 'arxiv')) this.plugin.ensureArxivFresh().then((result) => { if (result?.justFetched) this.softRefresh('arxiv'); });
+  }
+
+  async buildHomeOverview(page) {
+    const papers = this.plugin.getPapers();
+    const reading = papers.filter((paper) => paper.status === '阅读中');
+    const pending = papers.filter((paper) => paper.status === '待读');
+    const completed = papers.filter((paper) => paper.status === '已完成');
+    const stats = page.createEl('div', { cls: 'jrs-prism-stats' });
+    [[papers.length, '文献总量', 'LIBRARY / 知识积累', '全部'], [pending.length, '待读文献', 'INBOX / 待探索', '待读'],
+      [reading.length, '正在精读', 'READING / 深入理解', '阅读中'], [completed.length, '已完成阅读', 'ARCHIVE / 研究积累', '已完成']].forEach(([value, label, eyebrow, status]) => {
+      const metric = uiButton(stats, '', '', async () => {
+        this.plugin.libFilterState = { statusFilter: status, q: '', prioFilter: '全部', topicFilter: '', projectFilter: '' };
+        await this.goto('library');
+      }, 'jrs-prism-stat');
+      metric.createEl('div', { cls: 'jrs-prism-caption', text: eyebrow });
+      metric.createEl('div', { cls: 'jrs-prism-label', text: label });
+      const amount = metric.createEl('div', { cls: 'jrs-prism-value' }); amount.createEl('strong', { text: String(value) }); amount.createSpan({ text: '篇文献' });
+      metric.createEl('div', { cls: 'jrs-prism-foot', text: status === '全部' ? `${this.plugin.papersAddedThisWeek()} 篇本周收集` : `${papers.length ? Math.round(value / papers.length * 100) : 0}% 文献占比` });
+    });
+    const cockpit = page.createEl('div', { cls: 'jrs-reading-cockpit' });
+    const queue = cockpit.createEl('section', { cls: 'jrs-cockpit-queue' });
+    const heading = queue.createEl('div', { cls: 'jrs-assistant-section-title' }); heading.createSpan({ text: '阅读队列' });
+    uiButton(heading, '全部', 'arrow-up-right', () => this.goto('queue'), 'jrs-text-button');
+    [[reading, '进行中'], [pending, '接下来']].forEach(([items, label]) => {
+      const group = queue.createEl('div', { cls: 'jrs-cockpit-queue-group' });
+      group.createEl('div', { cls: 'jrs-cockpit-queue-caption', text: `${label} · ${items.length}` });
+      if (!items.length) group.createEl('p', { cls: 'od-hint', text: label === '进行中' ? '还没有进行中的阅读' : '阅读队列已清空' });
+      items.slice(0, 4).forEach((paper) => {
+        const button = uiButton(group, '', '', () => {
+          this._readingDeck.selectPath(paper.path);
+        }, 'jrs-cockpit-queue-item');
+        button.dataset.path = paper.path;
+        button.createEl('span', { text: paper.title });
+        button.createEl('small', { text: `${paper.progress}%${paper.priority ? ' · ' + paper.priority + '优先' : ''}` });
+      });
+    });
+    const deckHost = cockpit.createEl('section');
+    const ordered = [...reading.sort((a, b) => b.progress - a.progress), ...this.plugin.getPapersSorted('priority').filter((paper) => paper.status === '待读'), ...completed, ...papers.filter((paper) => paper.status === '已归档')];
+    this._readingDeck = new ReadingDeck(this, deckHost, ordered);
+    cockpit.addEventListener('jrs-paper-select', (event) => {
+      queue.querySelectorAll('.jrs-cockpit-queue-item').forEach((button) => button.classList.toggle('is-active', button.dataset.path === event.detail));
+    });
+    this._readingDeck.select(this._readingDeck.index);
   }
 
   cardDef(id) {
@@ -647,75 +2359,46 @@ class DashboardView extends ItemView {
     return s.layout[id];
   }
 
-  packLayout() {
-    const s = this.plugin.settings;
-    const cols = s.columns;
-    const colBottom = new Array(cols).fill(0);
-    let changed = false;
-    for (const def of this.visibleCards()) {
-      const l = this.layoutOf(def.id);
-      if (l.x >= 0 && l.y >= 0) {
-        const w = Math.min(Math.max(l.w, 1), cols);
-        for (let c = l.x; c < Math.min(l.x + w, cols); c += 1) colBottom[c] = Math.max(colBottom[c], l.y + l.h);
-        continue;
-      }
-      const w = Math.min(Math.max(l.w, 1), cols);
-      const h = Math.max(l.h, 1);
-      let bx = 0; let by = Number.MAX_SAFE_INTEGER;
-      for (let x = 0; x + w <= cols; x += 1) {
-        let y = 0;
-        for (let c = x; c < x + w; c += 1) y = Math.max(y, colBottom[c]);
-        if (y < by) { by = y; bx = x; }
-      }
-      if (by === Number.MAX_SAFE_INTEGER) { by = 0; bx = 0; }
-      l.x = bx; l.y = by; l.w = w; l.h = h;
-      for (let c = bx; c < bx + w; c += 1) colBottom[c] = by + h;
-      changed = true;
-    }
-    if (changed) this.plugin.saveSettings();
+  packLayout(priorityId) {
+    const cards = this.visibleCards().map((def) => ({ id: def.id, layout: this.layoutOf(def.id) }));
+    if (priorityId) cards.sort((a, b) => Number(b.id === priorityId) - Number(a.id === priorityId));
+    const packed = ResearchCore.packBoardLayout(cards, this.plugin.settings.columns);
+    const changed = cards.some((card) => JSON.stringify(card.layout) !== JSON.stringify(packed[card.id]));
+    Object.assign(this.plugin.settings.layout, packed);
+    if (changed) this.plugin.saveSettings().catch((error) => new Notice(`布局保存失败：${error.message}`));
   }
 
   computeMetrics() {
-    const s = this.plugin.settings;
-    const boardW = this._board ? this._board.clientWidth : 1000;
-    const gap = s.gapPx;
-    /* 自适应列数：colW 低于 90px 时自动降列，保底 2 列 */
-    let cols = s.columns;
-    const minColW = 90;
-    const fitCols = Math.max(2, Math.floor((boardW + gap) / (minColW + gap)));
-    if (cols > fitCols) cols = fitCols;
-    const colW = Math.max(40, (boardW - (cols - 1) * gap) / cols);
+    const settings = this.plugin.settings;
+    const boardW = this._board?.clientWidth || 900;
+    const gap = Math.max(4, Math.min(32, Number(settings.gapPx) || 14));
+    const preferred = Math.max(2, Math.min(12, Number(settings.columns) || DEFAULT_COLS));
+    const fit = Math.max(2, Math.floor((boardW + gap) / (128 + gap)));
+    const cols = Math.min(preferred, fit);
+    const colW = Math.max(1, (boardW - (cols - 1) * gap) / cols);
     this._metrics = { cols, colW, rowH: ROW_H, gap, boardW };
-    /* 列数减少后：越界卡重排 */
-    if (cols < s.columns) {
-      for (const def of this.visibleCards()) {
-        const l = this.layoutOf(def.id);
-        if (l.x >= 0 && l.x + Math.min(l.w, cols) > cols) { l.x = -1; l.y = -1; }
-      }
-      this.packLayout();
-    }
+    this._displayLayout = ResearchCore.packBoardLayout(this.visibleCards().map((def) => ({ id: def.id, layout: this.layoutOf(def.id) })), cols, cols !== preferred);
   }
 
-  positionShell(shell, l) {
-    const { colW, rowH, gap, cols } = this._metrics;
-    const w = Math.min(l.w, cols);
-    if (l.x + w > cols) l.x = Math.max(0, cols - w);
-    shell.style.left = `${l.x * (colW + gap)}px`;
-    shell.style.top = `${l.y * (rowH + gap)}px`;
-    shell.style.width = `${w * colW + (w - 1) * gap}px`;
-    shell.style.height = `${l.h * rowH + (l.h - 1) * gap}px`;
+  positionShell(shell, layout) {
+    if (!layout) return;
+    const { colW, rowH, gap } = this._metrics;
+    shell.style.left = `${layout.x * (colW + gap)}px`;
+    shell.style.top = `${layout.y * (rowH + gap)}px`;
+    shell.style.width = `${layout.w * colW + (layout.w - 1) * gap}px`;
+    shell.style.height = `${layout.h * rowH + (layout.h - 1) * gap}px`;
   }
 
-  applyPositions() { for (const [id, shell] of this._shells) this.positionShell(shell, this.layoutOf(id)); }
+  applyPositions() {
+    for (const [id, shell] of this._shells) this.positionShell(shell, this._displayLayout?.[id]);
+    const bottom = Object.values(this._displayLayout || {}).reduce((max, layout) => Math.max(max, layout.y + layout.h), 0);
+    if (this._board) this._board.style.height = `${Math.max(1, bottom) * (ROW_H + this._metrics.gap) - this._metrics.gap}px`;
+  }
 
   setupBoardObserver() {
     if (this._ro) this._ro.disconnect();
     this._ro = new ResizeObserver(() => { this.computeMetrics(); this.applyPositions(); });
     this._ro.observe(this._board);
-    /* resize 监听只注册一次（防泄漏：旧句柄先卸） */
-    if (this._wsResizeRef) this.app.workspace.offref(this._wsResizeRef);
-    this._wsResizeRef = this.app.workspace.on('resize', () => { this.computeMetrics(); this.applyPositions(); });
-    this.registerEvent(this._wsResizeRef);
   }
 
   async buildShell(def) {
@@ -748,39 +2431,41 @@ class DashboardView extends ItemView {
   }
 
   bindCardDrag(shell, id) {
-    shell.addEventListener('pointerdown', (e) => {
-      if (!this.editing || e.button !== 0) return;
-      const onResize = e.target instanceof Element && !!e.target.closest('.jrs-resize');
-      const l = this.layoutOf(id);
+    shell.addEventListener('pointerdown', (event) => {
+      if (!this.editing || event.button !== 0 || event.target.closest('button, input, a, select')) return;
+      const resizing = !!event.target.closest('.jrs-resize');
+      if (!resizing && !event.target.closest('.jrs-card-handle')) return;
+      event.preventDefault();
       const { colW, rowH, gap, cols } = this._metrics;
-      const startX = e.clientX; const startY = e.clientY;
-      const orig = { x: l.x, y: l.y, w: l.w, h: l.h };
-      shell.setPointerCapture(e.pointerId);
-      shell.addClass('jrs-card--lift');
-      const move = (ev) => {
-        const dx = ev.clientX - startX; const dy = ev.clientY - startY;
-        if (onResize) {
-          l.w = Math.min(cols, Math.max(1, Math.round(orig.w + dx / (colW + gap))));
-          l.h = Math.max(1, Math.round(orig.h + dy / (rowH + gap)));
+      const original = { ...this._displayLayout[id] };
+      const moving = { ...original };
+      const startX = event.clientX; const startY = event.clientY;
+      shell.setPointerCapture(event.pointerId); shell.addClass('jrs-card--lift');
+      const move = (next) => {
+        const dx = next.clientX - startX; const dy = next.clientY - startY;
+        if (resizing) {
+          moving.w = Math.min(cols - moving.x, Math.max(Math.min(2, cols), Math.round(original.w + dx / (colW + gap))));
+          moving.h = Math.max(1, Math.min(24, Math.round(original.h + dy / (rowH + gap))));
         } else {
-          l.x = Math.min(Math.max(0, Math.round(orig.x + dx / (colW + gap))), cols - Math.min(l.w, cols));
-          l.y = Math.max(0, Math.round(orig.y + dy / (rowH + gap)));
+          moving.x = Math.min(Math.max(0, Math.round(original.x + dx / (colW + gap))), cols - moving.w);
+          moving.y = Math.max(0, Math.min(500, Math.round(original.y + dy / (rowH + gap))));
         }
-        this.positionShell(shell, l);
+        const cards = [{ id, layout: moving }, ...this.visibleCards().filter((def) => def.id !== id).map((def) => ({ id: def.id, layout: this._displayLayout[def.id] }))];
+        this._displayLayout = ResearchCore.packBoardLayout(cards, cols); this.applyPositions();
       };
-      const up = async () => {
-        shell.removeEventListener('pointermove', move);
-        shell.removeEventListener('pointerup', up);
-        shell.removeEventListener('pointercancel', up);
+      const finish = async (end) => {
+        shell.removeEventListener('pointermove', move); shell.removeEventListener('pointerup', finish); shell.removeEventListener('pointercancel', finish);
         shell.removeClass('jrs-card--lift');
-        await this.plugin.saveSettings();
+        if (end.type !== 'pointercancel') {
+          Object.assign(this.plugin.settings.layout, this._displayLayout);
+          await this.plugin.saveSettings();
+        }
+        this.computeMetrics(); this.applyPositions();
       };
-      shell.addEventListener('pointermove', move);
-      shell.addEventListener('pointerup', up);
-      shell.addEventListener('pointercancel', up);
+      shell.addEventListener('pointermove', move); shell.addEventListener('pointerup', finish); shell.addEventListener('pointercancel', finish);
     });
-    shell.addEventListener('dblclick', () => {
-      if (this.editing) new CardConfigModal(this.plugin, this.cardDef(id), () => this.goto('home')).open();
+    shell.addEventListener('dblclick', (event) => {
+      if (this.editing && event.target.closest('.jrs-card-handle') && !event.target.closest('button')) new CardConfigModal(this.plugin, this.cardDef(id), () => this.render()).open();
     });
   }
 
@@ -803,54 +2488,20 @@ class DashboardView extends ItemView {
   }
 
   buildHero() {
-    const s = this.plugin.settings;
-    const h = document.createElement('header');
-    h.addClass('jrs-hero', 'jrs-hero-center', 'od-anim');
-
-    /* 标题（居中） */
-    const brand = h.createEl('div', { cls: 'jrs-hero-brand' });
-    const logo = brand.createEl('span', { cls: 'jrs-hero-logo' });
-    setIcon(logo, 'telescope');
-    brand.createEl('h1', { cls: 'jrs-hero-name', text: 'Jensen 科研工作站' });
-
-    /* 副标题 */
+    const header = document.createElement('header'); header.className = 'jrs-home-header';
+    const copy = header.createEl('div', { cls: 'jrs-home-welcome' });
+    copy.createEl('div', { cls: 'jrs-eyebrow', text: 'RESEARCH WORKSPACE' });
     const hour = window.moment().hour();
-    const greet = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
-    const papers = this.plugin.getPapers();
-    const todo = papers.filter((p) => p.status === '待读').length;
-    const reading = papers.filter((p) => p.status === '阅读中').length;
-    const wd = '日一二三四五六'[window.moment().day()];
-    let sub = `${greet}，Jensen · ${window.moment().format('M月D日')} 星期${wd}`;
-    if (s.researchStart && window.moment(s.researchStart, 'YYYY-MM-DD').isValid()) {
-      sub += ` · 科研第 ${window.moment().diff(window.moment(s.researchStart, 'YYYY-MM-DD'), 'days') + 1} 天`;
-    }
-    sub += ` · 待读 ${todo} / 阅读中 ${reading} · 今日专注 ${this.plugin.todayPomoMinutes()} 分钟`;
-    h.createEl('div', { cls: 'jrs-hero-sub', text: sub });
-
-    /* 搜索框（标题正下方，居中） */
-    const omni = h.createEl('div', { cls: 'jrs-hero-omni' });
-    this.buildOmnibox(omni);
-
-    /* 操作行（居中） */
-    const actions = h.createEl('div', { cls: 'od-header-actions jrs-hero-actions' });
-    const mkBtn = (cls, icon, label, fn) => {
-      const b = actions.createEl('button', { cls });
-      setIcon(b.createSpan(), icon);
-      b.createSpan({ text: label });
-      b.onclick = fn;
-      return b;
-    };
-    mkBtn('od-btn od-btn--primary', 'library', '文献库', () => this.goto('library'));
-    mkBtn('od-btn', 'file-plus', '添加', () => new AddPaperModal(this.plugin, () => this.goto('home')).open());
-    mkBtn('od-btn', 'import', '导入', () => new ImportFolderModal(this.plugin, () => this.goto('home')).open());
-    mkBtn('od-btn', 'layout-panel-left', '卡片', () => new CardManagerModal(this.plugin, () => this.goto('home')).open());
-    mkBtn('od-btn', 'bot', '知识问答', () => this.goto('ask'));
-    mkBtn('od-btn', 'target', '投稿冲刺', () => this.goto('submit'));
-    const editBtn = actions.createEl('button', { cls: `od-btn jrs-edit-toggle${this.editing ? ' is-on' : ''}` });
-    setIcon(editBtn.createSpan(), this.editing ? 'check' : 'layout-grid');
-    editBtn.createSpan({ text: this.editing ? '完成排版' : '排版' });
-    editBtn.onclick = () => this.toggleEditing();
-    return h;
+    const greeting = hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
+    copy.createEl('h1', { text: '阅读驾驶舱' });
+    copy.createEl('p', { text: `${greeting}，Jensen · ${window.moment().format('M月D日')} 星期${'日一二三四五六'[window.moment().day()]} · 阅读、理解、沉淀。` });
+    uiButton(copy, `来源：${this.plugin.settings.sourceFolder || this.app.vault.getName() + ' / 库根目录'}`, 'folder-open', () => this.goto('library'), 'jrs-text-button jrs-home-source');
+    const actions = header.createEl('div', { cls: 'jrs-home-tools' });
+    const omni = actions.createEl('div', { cls: 'jrs-omnibox' }); this.buildOmnibox(omni);
+    buildThemeToggle(actions, this.plugin);
+    uiButton(actions, '记想法', 'pen-line', () => new CaptureModal(this.plugin).open(), 'od-btn');
+    uiButton(actions, '添加文献', 'plus', () => new AddPaperModal(this.plugin, () => this.render()).open(), 'od-btn od-btn--primary');
+    return header;
   }
 
   async renderCardContent(id, body) {
@@ -1185,237 +2836,12 @@ class DashboardView extends ItemView {
     return null;
   }
 
-  /* ========== 区段：AI 发现 ========== */
-
-  renderDiscover(page) {
-    if (!this._discoverSrc) this._discoverSrc = 'arxiv';
-    const intro = page.createEl('section', { cls: 'jrs-card' });
-    const head = intro.createEl('div', { cls: 'jrs-section-heading' });
-    head.createEl('h2', { text: '论文检索' });
-    head.createSpan({ text: 'arXiv 预印本 + Crossref 正式期刊（自动标注中科院分区，参考值）' });
-    /* 源切换 */
-    const srcRow = intro.createEl('div', { cls: 'od-filters' });
-    const mkSrc = (id, label) => {
-      const c = srcRow.createEl('button', { cls: `od-filter${this._discoverSrc === id ? ' is-active' : ''}`, text: label });
-      c.onclick = () => { this._discoverSrc = id; this.render(); };
-      return c;
-    };
-    mkSrc('arxiv', 'arXiv 预印本');
-    mkSrc('crossref', 'Crossref 期刊');
-    const form = intro.createEl('div', { cls: 'jrs-discover-form' });
-    const input = form.createEl('input', {
-      type: 'text',
-      placeholder: this._discoverSrc === 'arxiv'
-        ? '关键词…'
-        : '如 satellite scheduling grid / 敏捷卫星 调度（英文效果最佳）',
-    });
-    if (this._discoverSrc === 'arxiv') input.value = this.plugin.settings.arxivQuery;
-    const num = form.createEl('input', { type: 'number', attr: { min: '3', max: '20' } });
-    num.value = String(this.plugin.settings.arxivMax);
-    const btn = form.createEl('button', { cls: 'od-btn od-btn--primary', text: '检索' });
-    const host = page.createEl('div', { cls: 'jrs-discover-results' });
-    const renderResults = (items) => {
-      host.empty();
-      if (!items || !items.length) { host.createEl('div', { cls: 'od-task-empty', text: '没有结果，换个关键词试试' }); return; }
-      items.forEach((it) => {
-        const card = host.createEl('article', { cls: 'jrs-card jrs-paper-row' });
-        const main = card.createEl('div', { cls: 'jrs-row-main' });
-        const t = main.createEl('div', { cls: 'jrs-row-title', text: it.title });
-        if (it.url) t.onclick = () => window.open(it.url);
-        const metaLine = main.createEl('div', { cls: 'od-hint' });
-        const zone = this.plugin.zoneOf(it.venue);
-        metaLine.textContent = [it.date, it.venue, it.authors].filter(Boolean).join(' · ');
-        if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) main.appendChild(zb); }
-        if (it.summary) main.createEl('div', { cls: 'jrs-row-summary', text: it.summary });
-        const acts = card.createEl('div', { cls: 'jrs-row-actions' });
-        const add = acts.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '＋ 入库' });
-        add.onclick = async () => {
-          add.disabled = true;
-          try {
-            if (it.source === 'crossref') await this.plugin.crossrefToLibrary(it);
-            else await this.plugin.arxivToLibrary(it);
-            new Notice('已加入文献库');
-            add.textContent = '已入库';
-          } catch (e) { new Notice(`入库失败：${e.message}`); add.disabled = false; }
-        };
-      });
-    };
-    btn.onclick = async () => {
-      btn.disabled = true;
-      btn.textContent = '检索中…';
-      try {
-        const q = input.value.trim();
-        const n = Math.min(20, Math.max(3, parseInt(num.value, 10) || 8));
-        if (this._discoverSrc === 'arxiv') {
-          if (q) { this.plugin.settings.arxivQuery = q; await this.plugin.saveSettings(); }
-          this.plugin.settings.arxivMax = n;
-          const r = await this.plugin.fetchArxiv(true);
-          renderResults(r.items.slice(0, n));
-        } else {
-          const items = await this.plugin.searchCrossref(q, n);
-          renderResults(items);
-        }
-      } catch (e) { new Notice(`检索失败：${e.message}`); }
-      btn.disabled = false;
-      btn.textContent = '检索';
-    };
-    if (this._discoverSrc === 'arxiv') {
-      const cache = this.plugin.settings.arxivCache;
-      if (cache?.items?.length) renderResults(cache.items.slice(0, this.plugin.settings.arxivMax));
-      else host.createEl('div', { cls: 'od-task-empty', text: '输入关键词点「检索」' });
-    } else {
-      host.createEl('div', { cls: 'od-task-empty', text: '输入英文关键词检索正式期刊论文（EJOR/AST 等），结果自动标注分区' });
-    }
-  }
-
-  /* ========== 区段：阅读队列 ========== */
-
-  renderQueue(page) {
-    const papers = this.plugin.getPapers();
-    const groups = [
-      { title: '进行中', hint: '正在阅读的文献', items: papers.filter((p) => p.status === '阅读中') },
-      { title: '高优先待读', hint: '先啃硬骨头', items: papers.filter((p) => p.priority === '高' && p.status === '待读') },
-      { title: '排队待读', hint: '按优先级与时间排序', items: papers.filter((p) => p.status === '待读' && p.priority !== '高').sort((a, b) => (PRIORITIES.indexOf(a.priority || '低') - PRIORITIES.indexOf(b.priority || '低')) || b.added - a.added).slice(0, 15) },
-    ];
-    groups.forEach((g) => {
-      const panel = page.createEl('section', { cls: 'jrs-card' });
-      const head = panel.createEl('div', { cls: 'jrs-section-heading' });
-      head.createEl('h2', { text: g.title });
-      head.createSpan({ text: g.hint });
-      if (!g.items.length) { panel.createEl('div', { cls: 'od-task-empty', text: '暂无' }); return; }
-      g.items.forEach((p) => panel.appendChild(this.paperRow(p)));
-    });
-  }
-
-  paperRow(p) {
-    const row = document.createElement('article');
-    row.className = 'jrs-paper-row';
-    const main = row.createEl('div', { cls: 'jrs-row-main' });
-    const title = main.createEl('div', { cls: 'jrs-row-title', text: p.title });
-    title.onclick = () => this.plugin.openReading(p);
-    const meta = main.createEl('div', { cls: 'od-hint' });
-    const zone = this.plugin.zoneOf(p.venue);
-    meta.textContent = [p.year, p.venue, p.authorsShort].filter(Boolean).join(' · ') || '—';
-    if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) main.appendChild(zb); }
-    /* 进度条 + 快进按钮 */
-    const prog = main.createEl('div', { cls: 'jrs-progress' });
-    const bar = prog.createEl('div', { cls: 'od-progressbar' });
-    bar.createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${p.progress}%`;
-    const pct = prog.createEl('button', { cls: 'jrs-progress-pct', text: `${p.progress}%`, title: '点击 +25% 阅读进度' });
-    pct.onclick = async () => { await this.plugin.bumpProgress(p, 25); this.render(); };
-    const acts = row.createEl('div', { cls: 'jrs-row-actions' });
-    const st = acts.createEl('span', { cls: 'od-status' });
-    st.setAttribute('data-status', p.status);
-    st.textContent = p.status;
-    st.onclick = async () => {
-      const next = STATUSES[(STATUSES.indexOf(p.status) + 1) % STATUSES.length];
-      await this.plugin.setPaperStatus(p, next);
-      this.render();
-    };
-    const read = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '分栏阅读' });
-    read.onclick = () => this.plugin.openReading(p);
-    return row;
-  }
-
   /* ========== 区段：文献库（嵌入面板） ========== */
 
   renderLibrarySection(page) {
     if (!this._panel) this._panel = new LibraryPanel(this.plugin, () => this.render());
     this._panel.host = page;
     this._panel.render();
-  }
-
-  /* ========== 区段：论文图谱 ========== */
-
-  async renderGraph(page) {
-    const stats = this.plugin.graphStats();
-    const intro = page.createEl('section', { cls: 'jrs-card' });
-    const head = intro.createEl('div', { cls: 'jrs-section-heading' });
-    head.createEl('h2', { text: '论文图谱' });
-    head.createSpan({ text: `主题 ${stats.topics} 个 · 论文 ${stats.papers} 篇 · 连线 ${stats.edges} 条` });
-    const desc = intro.createEl('div', { cls: 'od-hint' });
-    desc.textContent = '生成 Obsidian Canvas：主题节点居中、论文节点按方向环绕，连线表示归属关系。可在画布中自由拖拽编辑。';
-    const acts = intro.createEl('div', { cls: 'jrs-row-actions' });
-    const exists = !!this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
-    /* 真实图谱缩略预览：读 canvas JSON → SVG（带主题标签 + 可见连线） */
-    if (exists) {
-      const thumb = intro.createEl('div', { cls: 'jrs-graph-thumb' });
-      try {
-        const f = this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
-        const data = JSON.parse(await this.app.vault.cachedRead(f));
-        const nodes = data.nodes || [];
-        const edges = data.edges || [];
-        const okNodes = nodes.filter((nd) => Number.isFinite(nd.x) && Number.isFinite(nd.y));
-        if (okNodes.length) {
-          const xs = okNodes.map((nd) => nd.x); const ys = okNodes.map((nd) => nd.y);
-          const minX = Math.min(...xs) - 160; const maxX = Math.max(...xs) + 160;
-          const minY = Math.min(...ys) - 60; const maxY = Math.max(...ys) + 60;
-          const W = 640; const H = Math.max(200, Math.round((W * (maxY - minY)) / (maxX - minX)));
-          const sx = (x) => ((x - minX) / (maxX - minX)) * W;
-          const sy = (y) => ((y - minY) / (maxY - minY)) * H;
-          const nodeById = Object.fromEntries(nodes.map((nd) => [nd.id, nd]));
-          let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-          /* 连线：加粗加色使其可见 */
-          edges.forEach((e) => {
-            const a = nodeById[e.fromNode]; const b = nodeById[e.toNode];
-            if (!a || !b) return;
-            svg += `<line x1="${sx(a.x + 130)}" y1="${sy(a.y + 30)}" x2="${sx(b.x + 140)}" y2="${sy(b.y + 40)}" stroke="rgba(76,125,239,.25)" stroke-width="1.5"/>`;
-          });
-          nodes.forEach((nd) => {
-            const isTopic = String(nd.id).startsWith('topic-');
-            const cx = sx(nd.x + (nd.width || 260) / 2); const cy = sy(nd.y + (nd.height || 60) / 2);
-            if (isTopic) {
-              const rw = Math.max(50, (nd.width || 260) / (maxX - minX) * W);
-              const rh = Math.max(18, (nd.height || 60) / (maxY - minY) * H);
-              svg += `<rect x="${sx(nd.x)}" y="${sy(nd.y)}" width="${rw}" height="${rh}" rx="4" fill="rgba(76,125,239,.88)"/>`;
-              /* 主题标签 */
-              const label = (nd.text || '').replace(/^##\s*/, '').trim().slice(0, 8);
-              if (label) {
-                const fs = Math.max(9, Math.min(12, rw / label.length));
-                svg += `<text x="${sx(nd.x) + rw / 2}" y="${sy(nd.y) + rh / 2 + fs * 0.35}" text-anchor="middle" font-size="${fs}" fill="#fff" font-weight="600">${label}</text>`;
-              }
-            } else {
-              svg += `<circle cx="${cx}" cy="${cy}" r="3.5" fill="rgba(100,120,160,.8)" stroke="rgba(76,125,239,.4)" stroke-width="0.5"/>`;
-            }
-          });
-          svg += '</svg>';
-          thumb.innerHTML = svg;
-          const cap = intro.createEl('div', { cls: 'od-hint' });
-          const topics = okNodes.filter((nd) => String(nd.id).startsWith('topic-')).length;
-          cap.textContent = `${topics} 个研究方向 · ${okNodes.length} 节点 · ${edges.length} 连线（蓝色=主题，灰点=论文，打开图谱可编辑）`;
-        }
-      } catch (e) {
-        thumb.createEl('div', { cls: 'od-hint', text: `图谱文件解析失败：${e.message}` });
-      }
-    }
-    if (exists) {
-      const open = acts.createEl('button', { cls: 'od-btn od-btn--primary', text: '打开图谱' });
-      open.onclick = () => this.plugin.openGraphCanvas();
-      const gen = acts.createEl('button', { cls: 'od-btn', text: '重建图谱' });
-      gen.title = '按当前文献库重建（顶部「重建图谱」同效）';
-      gen.onclick = async () => { await this.plugin.generateGraphCanvas(true); this.render(); };
-    } else {
-      const gen = acts.createEl('button', { cls: 'od-btn od-btn--primary', text: '生成图谱' });
-      gen.onclick = async () => { await this.plugin.generateGraphCanvas(true); this.render(); };
-    }
-    /* 主题统计卡 */
-    const grid = page.createEl('div', { cls: 'jrs-topic-grid' });
-    const papers = this.plugin.getPapers();
-    this.plugin.settings.topics.forEach((t) => {
-      const items = papers.filter((p) => p.topics.includes(t));
-      const card = grid.createEl('div', { cls: 'jrs-card jrs-topic-card' });
-      card.createEl('div', { cls: 'jrs-topic-name', text: t });
-      card.createEl('div', { cls: 'jrs-topic-count', text: `${items.length} 篇` });
-      items.slice(0, 3).forEach((p) => {
-        const line = card.createEl('div', { cls: 'od-hint' });
-        line.textContent = p.title;
-        if (p.authorsShort) {
-          const au = line.createEl('span', { cls: 'jrs-graph-author' });
-          au.textContent = ' — ' + p.authorsShort;
-        }
-      });
-      if (!items.length) card.createEl('div', { cls: 'od-hint', text: '暂无论文' });
-    });
   }
 
   /* ========== 区段：研究进展 ========== */
@@ -1434,7 +2860,8 @@ class DashboardView extends ItemView {
       const all = sections.reduce((a, s) => ({ d: a.d + s.done, t: a.t + s.total }), { d: 0, t: 0 });
       if (all.d === 0) {
         const cta = surveyCard.createEl('div', { cls: 'jrs-zero-cta' });
-        cta.createSpan({ text: '还没有任何勾选——打开大纲勾掉第一项，或点任意章节的起草按钮直接让 AI 生成初稿' });
+        cta.createSpan({ text: '从完成一项写作任务开始。展开章节，即可直接勾选任务。' });
+        uiButton(cta, '打开大纲', 'pen-line', () => this.plugin.openSurveyNote(), 'od-btn od-btn--sm');
       }
       const total = surveyCard.createEl('div', { cls: 'jrs-progress' });
       total.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${all.t ? (all.d / all.t) * 100 : 0}%`;
@@ -1462,6 +2889,31 @@ class DashboardView extends ItemView {
         };
         const bar = item.createEl('div', { cls: 'od-progressbar' });
         bar.createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${(sec.done / sec.total) * 100}%`;
+        if (sec.tasks?.length) {
+          const details = item.createEl('details', { cls: 'jrs-survey-tasks' });
+          details.createEl('summary', { text: `展开 ${sec.tasks.length} 项写作任务` });
+          sec.tasks.forEach((task) => {
+            const label = details.createEl('label', { cls: 'jrs-survey-task' });
+            const check = label.createEl('input', { type: 'checkbox', attr: { 'aria-label': task.text } }); check.checked = task.done;
+            label.createSpan({ text: task.text });
+            check.onchange = async () => {
+              check.disabled = true;
+              try {
+                const delta = check.checked ? 1 : -1;
+                await this.plugin.toggleSurveyTask(task);
+                task.done = check.checked; task.raw = task.raw.replace(/\[( |x|X)\]/, check.checked ? '[x]' : '[ ]');
+                sec.done += delta; all.d += delta;
+                right.querySelector('.od-progress-frac').textContent = `${sec.done}/${sec.total}`;
+                bar.firstElementChild.style.width = `${sec.total ? sec.done / sec.total * 100 : 0}%`;
+                total.querySelector('.od-hint').textContent = `总体 ${all.d}/${all.t}`;
+                total.querySelector('.od-progressbar-fill').style.width = `${all.t ? all.d / all.t * 100 : 0}%`;
+                const metric = page.querySelector('.jrs-section-metric');
+                if (metric) { metric.querySelector('strong').textContent = `${all.t ? Math.round(all.d / all.t * 100) : 0}%`; metric.querySelector('small').textContent = `${all.d} / ${all.t} 项任务`; }
+              } catch (error) { new Notice(error.message); check.checked = task.done; }
+              finally { check.disabled = false; }
+            };
+          });
+        }
       });
       const acts = surveyCard.createEl('div', { cls: 'jrs-row-actions' });
       [['pen-line', '打开大纲', () => this.plugin.openSurveyNote()],
@@ -1569,9 +3021,9 @@ class DashboardView extends ItemView {
     const stages = [['写作中', '准备投稿'], ['已投', '审稿中'], ['大修', '小修'], ['已接收'], ['已拒稿', '改投']];
     stages.forEach((stage) => {
       const items = subs.filter((s) => stage.includes(s.status));
-      if (!items.length) return;
       const g = pipe.createEl('div', { cls: 'jrs-submit-group' });
-      g.createEl('div', { cls: 'jrs-submit-stage', text: stage.join(' / ') });
+      g.createEl('div', { cls: 'jrs-submit-stage', text: `${stage.join(' / ')} · ${items.length}` });
+      if (!items.length) g.createEl('p', { cls: 'od-hint', text: '暂无条目' });
       items.forEach((s) => {
         const row = g.createEl('div', { cls: 'jrs-paper-row jrs-submit-row' });
         const main = row.createEl('div', { cls: 'jrs-row-main' });
@@ -1589,10 +3041,9 @@ class DashboardView extends ItemView {
         }
         hint.textContent = meta;
         const acts = row.createEl('div', { cls: 'jrs-row-actions' });
-        const st = acts.createEl('span', { cls: 'od-status jrs-sub-status', attr: { 'data-sub': s.status } });
-        st.textContent = s.status;
-        st.title = '点击流转到下一状态';
-        st.onclick = async () => { await this.plugin.cycleSubmission(s); this.render(); };
+        const st = acts.createEl('select', { cls: 'jrs-select jrs-sub-status', attr: { 'aria-label': `投稿状态：${s.title}` } });
+        SUB_STATUSES.forEach(value => st.createEl('option', { value, text: value })); st.value = s.status;
+        st.onchange = async () => { const status = st.value; st.disabled = true; try { await this.app.fileManager.processFrontMatter(s.file, fm => { fm.status = status; }); await SectionWorkspace.metadata(this.app, s.file, fm => fm.status === status); await this.render(); } catch (e) { st.disabled = false; st.value = s.status; new Notice(e.message); } };
         const open = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '打开' });
         open.onclick = () => this.plugin.smartOpenFile(s.file);
       });
@@ -1681,7 +3132,7 @@ class DashboardView extends ItemView {
       const acts = block.createEl('div', { cls: 'jrs-row-actions' });
       const save = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '沉淀为研究问题' });
       save.onclick = async () => {
-        const names = item.sources.map((s) => (s.file ? s.file.basename : s.basename)).filter(Boolean);
+        const names = (item.sources || []).map((s) => (s.file ? s.file.basename : s.basename)).filter(Boolean);
         await this.plugin.createQuestion(item.q, names.join(','));
         await this.plugin.appendAnswerToQuestion(item.q, item.a);
         new Notice('已沉淀到研究问题');
@@ -1741,196 +3192,334 @@ class DashboardView extends ItemView {
     await refreshList();
   }
 
-  /* ========== 区段：阅读笔记 ========== */
-
-  renderReader(page) {
-    const papers = this.plugin.getPapers().filter((p) => p.status === '阅读中' || p.status === '待读');
-    const intro = page.createEl('section', { cls: 'jrs-card' });
-    const head = intro.createEl('div', { cls: 'jrs-section-heading' });
-    if (!papers.length) {
-      head.createEl('h2', { text: '选择一篇论文开始精读' });
-      intro.createEl('div', { cls: 'od-task-empty', text: '文献库为空或都已读完，去「AI 发现」找新论文' });
-      return;
-    }
-    head.createEl('h2', { text: '继续精读' });
-    head.createSpan({ text: `进行中 ${papers.filter((p) => p.status === '阅读中').length} 篇 · 共 ${papers.length} 篇可选` });
-    papers.slice(0, 30).forEach((p) => {
-      const row = page.createEl('article', { cls: 'jrs-card jrs-paper-row' });
-      const main = row.createEl('div', { cls: 'jrs-row-main' });
-      const t = main.createEl('div', { cls: 'jrs-row-title', text: p.title });
-      t.onclick = () => this.plugin.openReading(p);
-      const meta = main.createEl('div', { cls: 'od-hint' });
-      const zone = this.plugin.zoneOf(p.venue);
-      meta.textContent = `${p.status}${zone ? ' · ' + zone.abbr + ' ' + zone.cas : ''}${p.priority ? ' · 优先级 ' + p.priority : ''}${p.year ? ' · ' + p.year : ''} · 进度 ${p.progress}%`;
-      const acts = row.createEl('div', { cls: 'jrs-row-actions' });
-      const read = acts.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '分栏阅读' });
-      read.onclick = () => this.plugin.openReading(p);
-      const ai = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: 'AI' });
-      setIcon(ai.createSpan(), 'sparkles');
-      ai.onclick = () => new AiPaperModal(this.plugin, p, () => this.render()).open();
-    });
-  }
 }
 
 /* ==========================================================================
  * 文献库面板（可嵌入区段，也可挂独立视图）
  * ========================================================================== */
 
+/* BEGIN GENERATED LIBRARY */
+// This source is embedded in main.js by tools/build.mjs. It uses the host's UI helpers.
 class LibraryPanel {
   constructor(plugin, rerender) {
     this.plugin = plugin;
     this.rerender = rerender || (() => {});
     this.q = ''; this.statusFilter = '全部'; this.prioFilter = '全部';
-    this.topicFilter = ''; this.sort = 'added';
+    this.topicFilter = ''; this.projectFilter = ''; this.sort = 'added';
+    this.viewMode = plugin.settings.libraryViewMode || 'list';
+    this.selected = new Set(); this.page = 0; this.pageSize = 30;
+    this.filtersOpen = false; this.busy = false;
   }
 
   applyIncomingTopic() {
     if (this.plugin.libFilterTopic) {
       this.topicFilter = this.plugin.libFilterTopic;
-      this.plugin.libFilterTopic = '';
+      this.plugin.libFilterTopic = ''; this.filtersOpen = true;
     }
+    if (this.plugin.libFilterState) {
+      Object.assign(this, this.plugin.libFilterState);
+      this.plugin.libFilterState = null;
+      this.selected.clear(); this.page = 0;
+    }
+  }
+
+  state() {
+    return Object.fromEntries(['q', 'statusFilter', 'prioFilter', 'topicFilter', 'projectFilter', 'sort', 'viewMode'].map((key) => [key, this[key]]));
+  }
+
+  changed() { this.page = 0; this.selected.clear(); this.renderList(); }
+
+  reset() {
+    Object.assign(this, { q: '', statusFilter: '全部', prioFilter: '全部', topicFilter: '', projectFilter: '', page: 0 });
+    this.selected.clear(); this.render();
   }
 
   render() {
     const root = this.host;
-    root.empty();
+    root.empty(); root.addClass('jrs-library-panel');
     this.applyIncomingTopic();
+    const allPapers = this.plugin.getPapers();
+    root.addClass('jrs-workspace-library');
+    new SectionWorkspace({ plugin: this.plugin, app: this.plugin.app }).metrics(root, [['当前收集', allPapers.length, this.plugin.settings.sourceFolder || '当前知识库'], ['可直接阅读', allPapers.filter(p => p.pdf).length, '本地 PDF 与关联文献'], ['待补充笔记', allPapers.filter(p => p.isPdfOnly).length, '首次写笔记时建立索引']]);
 
-    const bar = root.createEl('div', { cls: 'od-lib-toolbar' });
-    const search = bar.createEl('div', { cls: 'od-search' });
+    const workbench = root.createEl('section', { cls: 'jrs-library-workbench' });
+    const source = workbench.createEl('div', { cls: 'jrs-source-bar' });
+    const label = source.createEl('label', { cls: 'jrs-source-label' });
+    setIcon(label.createSpan(), 'folder-open'); label.createSpan({ text: '文献来源' });
+    const folder = label.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '当前文献来源文件夹' } });
+    this.plugin.sourceFolderOptions().forEach((option) => folder.createEl('option', { value: option.path, text: `${option.path || this.plugin.app.vault.getName() + ' / 全库'} · ${option.count} PDF` }));
+    folder.value = this.plugin.settings.sourceFolder;
+    folder.onchange = async () => { try { await this.plugin.setSourceFolder(folder.value); } catch (error) { new Notice(error.message); } };
+    uiButton(source, '使用当前目录', 'locate-fixed', () => this.plugin.setSourceFolder(this.plugin.currentDocumentFolder()), 'jrs-text-button');
+    source.createEl('p', { cls: 'od-hint', text: '仅显示此目录及子目录中的本地 PDF 与文献笔记。首次写笔记时建立索引，原 PDF 保留在原处。' });
+    const bar = workbench.createEl('div', { cls: 'od-lib-toolbar' });
+    const search = bar.createEl('div', { cls: 'od-search jrs-library-search' });
     setIcon(search.createSpan(), 'search');
-    const input = search.createEl('input', { type: 'text', placeholder: '搜索文献…' });
+    const input = search.createEl('input', { type: 'search', attr: { 'aria-label': '搜索文献，支持 status、topic、year 等字段', placeholder: '搜索标题、作者、方向…' } });
     input.value = this.q;
-    input.oninput = () => { this.q = input.value; this.renderList(); };
-    const sortSel = bar.createEl('select', { cls: 'od-btn' });
-    [['added', '最近添加'], ['year', '年份'], ['title', '标题'], ['rating', '评分'], ['priority', '优先级']].forEach(([v, l]) => {
-      sortSel.createEl('option', { value: v }).textContent = l;
-    });
+    input.oninput = () => { this.q = input.value; this.changed(); };
+    input.onkeydown = (e) => { if (e.key === 'Escape') { input.value = ''; this.q = ''; this.changed(); } };
+
+    const sortSel = bar.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': '文献排序' } });
+    [['added', '最近添加'], ['year', '年份从新到旧'], ['title', '标题 A–Z'], ['rating', '评分从高到低'], ['priority', '优先级']].forEach(([value, text]) => sortSel.createEl('option', { value, text }));
     sortSel.value = this.sort;
-    sortSel.onchange = () => { this.sort = sortSel.value; this.renderList(); };
-    const mkTool = (cls, icon, label, fn) => {
-      const b = bar.createEl('button', { cls });
-      setIcon(b.createSpan(), icon);
-      b.createSpan({ text: label });
-      b.onclick = fn;
+    sortSel.onchange = () => { this.sort = sortSel.value; this.page = 0; this.renderList(); };
+    const views = bar.createEl('div', { cls: 'jrs-view-switch', attr: { role: 'group', 'aria-label': '显示方式' } });
+    [['list', 'list', '列表'], ['grid', 'layout-grid', '卡片']].forEach(([mode, icon, label]) => {
+      const button = uiButton(views, '', icon, async () => {
+        this.viewMode = mode; this.plugin.settings.libraryViewMode = mode;
+        await this.plugin.saveSettings(); this.render();
+      }, `od-icon-btn${this.viewMode === mode ? ' is-active' : ''}`);
+      button.setAttribute('aria-label', label); button.setAttribute('aria-pressed', String(this.viewMode === mode)); button.title = label;
+    });
+
+    const more = bar.createEl('details', { cls: 'jrs-more' });
+    more.createEl('summary', { text: '工具', attr: { 'aria-label': '文献工具' } });
+    const menu = more.createEl('div', { cls: 'jrs-more-menu' });
+    [['import', '导入 PDF 文件夹', () => new ImportFolderModal(this.plugin, () => this.render()).open()],
+      ['table', '生成文献矩阵', () => this.plugin.generateMatrix()],
+      ['database', '生成 Bases', () => this.plugin.generateBases()],
+      ['folder-input', '外部 PDF 入库', () => this.plugin.migrateExternalPdfs()]].forEach(([icon, label, fn]) => uiButton(menu, label, icon, async () => { more.open = false; await fn(); }, 'jrs-menu-button'));
+
+    const tabs = workbench.createEl('div', { cls: 'jrs-library-tabs', attr: { role: 'group', 'aria-label': '阅读状态筛选' } });
+    ['全部', ...STATUSES].forEach((status) => {
+      const count = status === '全部' ? allPapers.length : allPapers.filter((p) => p.status === status).length;
+      const button = uiButton(tabs, status, '', () => { this.statusFilter = status; this.selected.clear(); this.page = 0; this.render(); }, `jrs-library-tab${this.statusFilter === status ? ' is-active' : ''}`);
+      button.createSpan({ cls: 'jrs-tab-count', text: String(count) });
+      button.setAttribute('aria-pressed', String(this.statusFilter === status));
+    });
+
+    const filters = workbench.createEl('details', { cls: 'jrs-filter-details' });
+    filters.open = this.filtersOpen || !!(this.topicFilter || this.projectFilter || this.prioFilter !== '全部');
+    filters.ontoggle = () => { this.filtersOpen = filters.open; };
+    const summary = filters.createEl('summary');
+    setIcon(summary.createSpan(), 'sliders-horizontal'); summary.createSpan({ text: '筛选与搜索语法' });
+    const active = [this.topicFilter, this.projectFilter, this.prioFilter !== '全部' ? this.prioFilter : ''].filter(Boolean).length;
+    if (active) summary.createSpan({ cls: 'jrs-tab-count', text: String(active) });
+    const fields = filters.createEl('div', { cls: 'jrs-filter-fields' });
+    const select = (label, key, options) => {
+      const wrap = fields.createEl('label', { cls: 'jrs-field' });
+      wrap.createSpan({ text: label });
+      const control = wrap.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': label } });
+      options.forEach(([value, text]) => control.createEl('option', { value, text }));
+      control.value = this[key];
+      control.onchange = () => { this[key] = control.value; this.changed(); };
     };
-    mkTool('od-btn od-btn--primary', 'plus', '添加', () => new AddPaperModal(this.plugin, () => this.render()).open());
-    mkTool('od-btn', 'import', '导入', () => new ImportFolderModal(this.plugin, () => this.render()).open());
-    mkTool('od-btn', 'table', '矩阵', () => this.plugin.generateMatrix());
-    mkTool('od-btn', 'database', 'Bases', () => this.plugin.generateBases());
-    mkTool('od-btn', 'database', 'PDF 入库', () => this.plugin.migrateExternalPdfs().then(() => this.render()));
-
-    const fRow = root.createEl('div', { cls: 'od-filters' });
-    ['全部', ...STATUSES].forEach((s) => {
-      const c = fRow.createEl('button', { cls: `od-filter${this.statusFilter === s ? ' is-active' : ''}`, text: s });
-      c.onclick = () => { this.statusFilter = s; this.render(); };
-    });
-    const pRow = root.createEl('div', { cls: 'od-filters' });
-    ['全部', ...PRIORITIES, '无'].forEach((p) => {
-      const c = pRow.createEl('button', { cls: `od-filter${this.prioFilter === p ? ' is-active' : ''}`, text: p === '全部' ? '全部优先级' : p });
-      c.onclick = () => { this.prioFilter = p; this.render(); };
-    });
-    const tRow = root.createEl('div', { cls: 'od-filters' });
-    const all = tRow.createEl('button', { cls: `od-filter${this.topicFilter === '' ? ' is-active' : ''}`, text: '全部方向' });
-    all.onclick = () => { this.topicFilter = ''; this.render(); };
-    this.plugin.settings.topics.forEach((t) => {
-      const c = tRow.createEl('button', { cls: `od-filter${this.topicFilter === t ? ' is-active' : ''}`, text: t });
-      c.onclick = () => { this.topicFilter = this.topicFilter === t ? '' : t; this.render(); };
+    select('优先级', 'prioFilter', [['全部', '全部优先级'], ...PRIORITIES.map((p) => [p, p + '优先级']), ['无', '未设置']]);
+    const topics = [...new Set([...this.plugin.settings.topics, ...allPapers.flatMap((p) => p.topics)])];
+    select('研究方向', 'topicFilter', [['', '全部方向'], ...topics.map((t) => [t, t])]);
+    const projects = [...new Set(allPapers.map((p) => p.project).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+    select('论文项目', 'projectFilter', [['', '全部项目'], ['__none__', '未分配项目'], ...projects.map((p) => [p, p])]);
+    const syntax = filters.createEl('div', { cls: 'jrs-search-help' });
+    syntax.createSpan({ text: '组合检索：' });
+    ['status:阅读中', 'topic:网格', 'year:>=2023', 'rating:>=4', 'has:pdf', '-status:已归档', 'project:"卫星规划"'].forEach((example) => {
+      uiButton(syntax, example, '', () => {
+        this.q = [this.q, example].filter(Boolean).join(' '); input.value = this.q; this.changed(); input.focus();
+      }, 'jrs-query-example');
     });
 
-    this._listHost = root.createEl('div');
+    const saved = root.createEl('div', { cls: 'jrs-saved-views' });
+    saved.createSpan({ cls: 'jrs-meta-label', text: '常用检索' });
+    [['高优先待读', 'status:待读 priority:高'], ['精读候选', 'rating:>=4 -status:已归档'], ['有 PDF', 'has:pdf']].forEach(([label, query]) => {
+      uiButton(saved, label, '', () => { this.resetStateForQuery(query); }, 'jrs-saved-view');
+    });
+    (this.plugin.settings.savedLibraryViews || []).forEach((view) => {
+      const chip = saved.createEl('span', { cls: 'jrs-saved-view-wrap' });
+      uiButton(chip, view.name, 'bookmark', () => { Object.assign(this, view.state); this.selected.clear(); this.page = 0; this.render(); }, 'jrs-saved-view');
+      const remove = uiButton(chip, '', 'x', async () => {
+        this.plugin.settings.savedLibraryViews = this.plugin.settings.savedLibraryViews.filter((v) => v.id !== view.id);
+        await this.plugin.saveSettings(); this.render();
+      }, 'jrs-saved-remove');
+      remove.setAttribute('aria-label', `删除检索「${view.name}」`);
+    });
+    uiButton(saved, '保存当前检索', 'bookmark-plus', () => this.saveView(), 'jrs-save-view');
+
+    this._listHost = root.createEl('div', { cls: 'jrs-library-results' });
     this.renderList();
   }
 
+  resetStateForQuery(query) {
+    Object.assign(this, { q: query, statusFilter: '全部', prioFilter: '全部', topicFilter: '', projectFilter: '', page: 0 });
+    this.selected.clear(); this.render();
+  }
+
+  saveView() {
+    const modal = new Modal(this.plugin.app);
+    modal.titleEl.setText('保存常用检索');
+    let name = '';
+    new Setting(modal.contentEl).setName('检索名称').addText((text) => {
+      text.setPlaceholder('例如：综述核心文献'); text.onChange((value) => { name = value.trim(); });
+      window.setTimeout(() => text.inputEl.focus(), 20);
+    });
+    uiButton(modal.contentEl, '保存检索', 'bookmark', async () => {
+      if (!name) { new Notice('请填写检索名称'); return; }
+      const list = this.plugin.settings.savedLibraryViews;
+      const existing = list.find((view) => view.name === name);
+      const view = { id: existing?.id || Date.now().toString(36), name, state: this.state() };
+      if (existing) list.splice(list.indexOf(existing), 1, view); else list.push(view);
+      await this.plugin.saveSettings(); modal.close(); this.render();
+    }, 'od-btn od-btn--primary');
+    modal.open();
+  }
+
   filtered() {
-    const q = this.q.trim().toLowerCase();
+    const query = ResearchCore.parsePaperQuery(this.q);
     return this.plugin.getPapersSorted(this.sort).filter((p) => {
       if (this.statusFilter !== '全部' && p.status !== this.statusFilter) return false;
       if (this.prioFilter === '无' && p.priority) return false;
       if (this.prioFilter !== '全部' && this.prioFilter !== '无' && p.priority !== this.prioFilter) return false;
       if (this.topicFilter && !p.topics.includes(this.topicFilter)) return false;
-      if (q && !`${p.title} ${p.authors} ${p.venue}`.toLowerCase().includes(q)) return false;
-      return true;
+      if (this.projectFilter === '__none__' ? !!p.project : this.projectFilter && p.project !== this.projectFilter) return false;
+      return ResearchCore.matchPaperQuery(p, query);
     });
   }
 
   renderList() {
     if (!this._listHost) return;
+    const oldScroll = this._listHost.closest('.jrs-page')?.scrollTop || 0;
     this._listHost.empty();
     const papers = this.filtered();
-    const grid = this._listHost.createEl('div', { cls: 'od-papers' });
+    const allPaths = new Set(this.plugin.getPapers().map((p) => p.path));
+    for (const path of this.selected) if (!allPaths.has(path)) this.selected.delete(path);
+    this.page = Math.max(0, Math.min(this.page, Math.ceil(papers.length / this.pageSize) - 1));
+    const visible = papers.slice(this.page * this.pageSize, (this.page + 1) * this.pageSize);
+    const resultBar = this._listHost.createEl('div', { cls: 'jrs-result-bar' });
+    const selectAll = resultBar.createEl('label', { cls: 'jrs-selection-label' });
+    const checkbox = selectAll.createEl('input', { type: 'checkbox', attr: { 'aria-label': '选择所有筛选结果' } });
+    const matched = papers.filter((p) => this.selected.has(p.path)).length;
+    checkbox.checked = !!papers.length && matched === papers.length;
+    checkbox.indeterminate = matched > 0 && matched < papers.length;
+    checkbox.disabled = !papers.length || this.busy;
+    checkbox.onchange = () => { papers.forEach((p) => checkbox.checked ? this.selected.add(p.path) : this.selected.delete(p.path)); this.renderList(); };
+    selectAll.createSpan({ cls: 'jrs-result-count', text: `${papers.length} 篇文献` });
+    const info = resultBar.createEl('span', { cls: 'od-hint', attr: { 'aria-live': 'polite' } });
+    info.textContent = this.selected.size ? `已选 ${this.selected.size} 篇` : '勾选文献以批量管理';
+    if (this.q || this.topicFilter || this.projectFilter || this.prioFilter !== '全部' || this.statusFilter !== '全部') uiButton(resultBar, '清除筛选', 'x', () => this.reset(), 'jrs-text-button');
+    if (this.plugin._lastPaperBatch?.length) uiButton(resultBar, '撤销上次批量修改', 'undo-2', async () => {
+      await this.plugin.undoPaperBatch(); this.render();
+    }, 'jrs-text-button');
+    const exportSelect = resultBar.createEl('select', { cls: 'jrs-select jrs-export-select', attr: { 'aria-label': this.selected.size ? '导出所选文献' : '导出筛选结果' } });
+    exportSelect.createEl('option', { value: '', text: this.selected.size ? '导出所选' : '导出结果' });
+    exportSelect.createEl('option', { value: 'csv', text: 'CSV · Excel 可打开' });
+    exportSelect.createEl('option', { value: 'bib', text: 'BibTeX · 文献引用' });
+    exportSelect.disabled = !papers.length || this.busy;
+    exportSelect.onchange = async () => {
+      const format = exportSelect.value; if (!format) return;
+      exportSelect.disabled = true;
+      try { await this.plugin.exportPapers(format, this.selected.size ? this.plugin.getPapers().filter((p) => this.selected.has(p.path)) : papers); }
+      catch (error) { new Notice(`导出失败：${error.message}`); }
+      finally { exportSelect.value = ''; exportSelect.disabled = false; }
+    };
+    if (this.selected.size) this.renderBatchBar();
+
     if (!papers.length) {
-      const e = grid.createEl('div', { cls: 'od-empty' });
-      setIcon(e.createSpan(), 'book-open');
-      e.createSpan({ text: '没有符合条件的文献' });
+      uiEmpty(this._listHost, this.plugin.getPapers().length ? '没有匹配的文献' : '从第一篇文献开始',
+        this.plugin.getPapers().length ? '试试减少筛选条件，或搜索标题、作者与研究方向。' : '添加论文或导入 PDF，把阅读、笔记和研究线索放在一起。',
+        this.plugin.getPapers().length ? '清除筛选' : '添加文献',
+        () => this.plugin.getPapers().length ? this.reset() : new AddPaperModal(this.plugin, () => this.render()).open(), 'library');
       return;
     }
-    papers.forEach((p, i) => grid.appendChild(this.paperCard(p, i)));
+    const grid = this._listHost.createEl('div', { cls: `od-papers jrs-library-${this.viewMode}` });
+    visible.forEach((paper, i) => grid.appendChild(this.paperCard(paper, i)));
+    if (papers.length > this.pageSize) {
+      const pager = this._listHost.createEl('div', { cls: 'jrs-pagination' });
+      const prev = uiButton(pager, '上一页', 'chevron-left', () => { this.page--; this.renderList(); }, 'od-btn');
+      prev.disabled = this.page === 0;
+      pager.createSpan({ text: `${this.page + 1} / ${Math.ceil(papers.length / this.pageSize)} · 每页 ${this.pageSize} 篇` });
+      const next = uiButton(pager, '下一页', 'chevron-right', () => { this.page++; this.renderList(); }, 'od-btn');
+      next.disabled = (this.page + 1) * this.pageSize >= papers.length;
+    }
+    const scroll = this._listHost.closest('.jrs-page');
+    if (scroll) scroll.scrollTop = oldScroll;
   }
 
-  paperCard(p, i) {
+  renderBatchBar() {
+    const bar = this._listHost.createEl('div', { cls: 'jrs-batch-bar', attr: { 'aria-label': '文献批量操作' } });
+    bar.createSpan({ cls: 'jrs-batch-count', text: this.busy ? '正在保存…' : `已选 ${this.selected.size} 篇` });
+    const action = (label, options, field) => {
+      const select = bar.createEl('select', { cls: 'jrs-select', attr: { 'aria-label': label } });
+      select.createEl('option', { value: '__placeholder__', text: label });
+      options.forEach((value) => select.createEl('option', { value, text: value || '清除优先级' }));
+      select.disabled = this.busy;
+      select.onchange = () => { if (select.value !== '__placeholder__') this.runBatch({ [field]: select.value }); };
+    };
+    action('设置状态', STATUSES, 'status'); action('设置优先级', [...PRIORITIES, ''], 'priority');
+    const project = bar.createEl('input', { type: 'text', cls: 'jrs-batch-project', attr: { 'aria-label': '批量分配的项目名称', placeholder: '项目名称' } });
+    project.disabled = this.busy;
+    const assign = uiButton(bar, '分配项目', 'folder', () => {
+      const value = project.value.trim();
+      if (!value) { new Notice('填写项目名称后再分配'); project.focus(); return; }
+      return this.runBatch({ project: value });
+    }, 'od-btn od-btn--sm');
+    assign.disabled = this.busy;
+    uiButton(bar, '取消选择', 'x', () => { this.selected.clear(); this.renderList(); }, 'jrs-text-button').disabled = this.busy;
+  }
+
+  async runBatch(patch) {
+    if (this.busy) return;
+    const papers = this.plugin.getPapers().filter((p) => this.selected.has(p.path));
+    this.busy = true; this.renderList();
+    try { await this.plugin.applyPaperBatch(papers, patch); this.selected.clear(); }
+    catch (error) { new Notice(`批量修改失败：${error.message}`); }
+    finally { this.busy = false; this.render(); }
+  }
+
+  paperCard(paper, i) {
     const el = document.createElement('article');
-    el.addClass('od-paper', 'od-anim');
-    el.style.animationDelay = `${Math.min(i * 25, 300)}ms`;
-    el.createEl('div', { cls: 'od-paper-title', text: p.title });
-    const meta = el.createEl('div', { cls: 'od-paper-meta' });
-    const zone = (p.fmCas || p.fmXr || p.fmCcf || p.fmTier) ? { cas: p.fmCas, top: p.fmCasTop, xr: p.fmXr, ccf: p.fmCcf, tier: p.fmTier } : this.plugin.zoneOf(p.venue);
-    if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) meta.appendChild(zb); }
-    const parts = [p.year, p.venue, p.authorsShort].filter(Boolean);
-    parts.forEach((seg, j) => {
-      if (j > 0) meta.createEl('span', { cls: 'od-dot-sep', text: '·' });
-      meta.createSpan({ text: seg });
-    });
-    if (p.topics.length) {
-      const chips = el.createEl('div', { cls: 'od-chips' });
-      p.topics.slice(0, 4).forEach((t) => chips.createEl('span', { cls: 'od-chip', text: t }));
+    el.className = `od-paper${this.selected.has(paper.path) ? ' is-selected' : ''}`;
+    el.dataset.paperPath = paper.path;
+    const selectWrap = el.createEl('label', { cls: 'jrs-paper-select' });
+    const checkbox = selectWrap.createEl('input', { type: 'checkbox', attr: { 'aria-label': `选择 ${paper.title}` } });
+    checkbox.checked = this.selected.has(paper.path); checkbox.disabled = this.busy;
+    checkbox.onchange = () => { checkbox.checked ? this.selected.add(paper.path) : this.selected.delete(paper.path); this.renderList(); };
+    const content = el.createEl('div', { cls: 'jrs-paper-content' });
+    const heading = content.createEl('div', { cls: 'jrs-paper-heading' });
+    const title = heading.createEl('button', { cls: 'od-paper-title', text: paper.title });
+    title.title = `${paper.pdf ? '阅读 PDF' : '打开笔记'}：${paper.title}`; title.onclick = () => this.plugin.openReading(paper);
+    const meta = content.createEl('div', { cls: 'od-paper-meta' });
+    const zone = (paper.fmCas || paper.fmXr || paper.fmCcf || paper.fmTier) ? { cas: paper.fmCas, top: paper.fmCasTop, xr: paper.fmXr, ccf: paper.fmCcf, tier: paper.fmTier } : this.plugin.zoneOf(paper.venue);
+    if (zone) { const badge = this.plugin.zoneBadge(zone); if (badge) meta.appendChild(badge); }
+    const parts = [paper.year, paper.venue, paper.authorsShort].filter(Boolean);
+    if (paper.isPdfOnly) parts.push('本地 PDF · 尚未建立笔记');
+    parts.forEach((part) => meta.createSpan({ text: part }));
+    if (paper.summary) content.createEl('p', { cls: 'jrs-paper-abstract', text: paper.summary });
+    if (paper.topics.length || paper.project) {
+      const chips = content.createEl('div', { cls: 'od-chips' });
+      paper.topics.slice(0, 4).forEach((topic) => uiButton(chips, topic, '', () => { this.topicFilter = topic; this.changed(); this.render(); }, 'od-chip jrs-topic-filter'));
+      if (paper.project) chips.createSpan({ cls: 'jrs-project-chip', text: paper.project });
     }
-    const foot = el.createEl('div', { cls: 'od-paper-foot' });
-    const st = foot.createEl('span', { cls: 'od-status' });
-    st.setAttribute('data-status', p.status);
-    st.textContent = p.status;
-    st.title = '点击切换状态';
-    st.onclick = async (e) => {
-      e.stopPropagation();
-      const next = STATUSES[(STATUSES.indexOf(p.status) + 1) % STATUSES.length];
-      await this.plugin.setPaperStatus(p, next);
-      new Notice(`→ ${next}`);
+    const foot = content.createEl('div', { cls: 'od-paper-foot' });
+    const status = foot.createEl('select', { cls: 'od-status jrs-paper-status', attr: { 'aria-label': `阅读状态：${paper.title}` } });
+    status.dataset.status = paper.status;
+    STATUSES.forEach((text) => status.createEl('option', { value: text, text })); status.value = paper.status;
+    status.onchange = async () => {
+      status.disabled = true;
+      try { await this.plugin.setPaperStatus(paper, status.value); this.renderList(); }
+      catch (error) { new Notice(`保存失败：${error.message}`); status.value = paper.status; }
+      finally { status.disabled = false; }
     };
-    const pr = foot.createEl('span', { cls: 'od-status jrs-prio' });
-    pr.setAttribute('data-prio', p.priority || '');
-    pr.textContent = p.priority || '';
-    pr.title = '优先级（点击切换 高→中→低→无）';
-    if (!p.priority) pr.style.display = 'none';
-    pr.onclick = async (e) => {
-      e.stopPropagation();
-      const order = [...PRIORITIES, ''];
-      await this.plugin.setPaperPriority(p, order[(order.indexOf(p.priority || '') + 1) % order.length]);
-      this.renderList();
-    };
-    const stars = foot.createEl('span', { cls: 'od-stars' });
-    for (let n = 1; n <= 5; n += 1) {
-      const s = stars.createEl('button', { cls: `od-star${n <= p.rating ? ' is-on' : ''}` });
-      setIcon(s, 'star');
-      s.onclick = async (e) => {
-        e.stopPropagation();
-        await this.plugin.setPaperRating(p, p.rating === n ? 0 : n);
-        this.renderList();
-      };
+    if (paper.priority) foot.createSpan({ cls: 'jrs-priority-label', text: paper.priority + '优先级' });
+    const stars = foot.createEl('span', { cls: 'od-stars', attr: { 'aria-label': `评分 ${paper.rating} 星` } });
+    for (let n = 1; n <= 5; n++) {
+      const star = uiButton(stars, '', 'star', async () => { await this.plugin.setPaperRating(paper, paper.rating === n ? 0 : n); this.renderList(); }, `od-star${n <= paper.rating ? ' is-on' : ''}`);
+      star.setAttribute('aria-label', `${n} 星`); star.setAttribute('aria-pressed', String(n <= paper.rating));
     }
-    const acts = foot.createEl('div', { cls: 'od-paper-actions' });
-    const mkIcon = (icon, title, fn) => {
-      const b = acts.createEl('button', { cls: 'od-icon-btn', title });
-      setIcon(b, icon);
-      b.onclick = (e) => { e.stopPropagation(); fn(); };
+    const progress = foot.createEl('span', { cls: 'jrs-reading-percent', text: `${paper.progress}%`, attr: { title: '阅读进度' } });
+    progress.style.setProperty('--jrs-read-progress', `${paper.progress}%`);
+    const acts = content.createEl('div', { cls: 'od-paper-actions' });
+    const iconButton = (icon, label, fn) => {
+      const button = uiButton(acts, label, icon, fn, 'od-btn od-btn--sm');
+      button.title = label; button.setAttribute('aria-label', `${label}：${paper.title}`);
     };
-    if (p.pdf) mkIcon(isHttp(p.pdf) ? 'external-link' : 'book-open-text', '打开 PDF', () => this.plugin.openPdf(p.pdf));
-    mkIcon('columns-2', '分栏阅读', () => this.plugin.openReading(p));
-    mkIcon('sparkles', 'AI 助手', () => new AiPaperModal(this.plugin, p, () => this.renderList()).open());
-    mkIcon('file-text', '打开笔记', () => this.plugin.openPaper(p));
-    el.onclick = () => this.plugin.openPaper(p);
+    if (paper.pdf) iconButton('book-open', '阅读 PDF', () => this.plugin.openReading(paper));
+    iconButton('file-text', '文献笔记', () => this.plugin.openPaper(paper));
+    if (paper.pdf) iconButton('columns-2', '分栏阅读', () => this.plugin.openReading(paper, { split: true }));
+    iconButton('bot', 'AI 助手', () => new AiPaperModal(this.plugin, paper, () => this.renderList()).open());
     return el;
   }
 }
+
+/* END GENERATED LIBRARY */
 
 class LibraryView extends ItemView {
   constructor(leaf, plugin) {
@@ -1985,6 +3574,7 @@ class AddPaperModal extends Modal {
     mkText('标题 *', 'title', '论文标题…');
     mkText('作者', 'authors', '如：伍国华, 祝江汉');
     mkText('年份', 'year', '2024');
+    mkText('论文项目', 'project', '例如：卫星任务规划综述');
     const venueWrap = new Setting(contentEl).setName('期刊 / 会议').setDesc('输入后自动识别 CCF/科协/中科院分区');
     const venueInput = venueWrap.controlEl.createEl('input', { type: 'text' });
     venueInput.className = 'jrs-inline-input';
@@ -2407,6 +3997,16 @@ class JrsSettingTab extends PluginSettingTab {
     containerEl.empty();
     const s = this.plugin.settings;
 
+    containerEl.createEl('h3', { text: '阅读与侧栏' });
+    new Setting(containerEl).setName('文献来源文件夹').setDesc('扫描所选目录和子目录的 PDF；不移动原文件。').addDropdown(d => {
+      this.plugin.sourceFolderOptions().forEach(option => d.addOption(option.path, `${option.path || '全库'} · ${option.count} PDF`));
+      d.setValue(s.sourceFolder).onChange(async value => { await this.plugin.setSourceFolder(value); });
+    });
+    new Setting(containerEl).setName('PDF 批注笔记目录').setDesc('高亮、评论和译文同步写入 Markdown；原 PDF 保持原样。').addText(t => t.setValue(s.annotationsFolder).onChange(async value => { if (value.trim()) { s.annotationsFolder = value.trim(); await this.plugin.saveSettings(); } }));
+    new Setting(containerEl).setName('PDF 阅读方式').setDesc('点击卡片或标题直接打开 PDF 标签页；需要对照笔记时点击「分栏阅读」。阅读位置与缩放自动保存。');
+    new Setting(containerEl).setName('文献卡组视图').addDropdown(d => d.addOption('3d', '3D 卡片').addOption('list', '列表').setValue(s.deckMode).onChange(async value => { s.deckMode = value; await this.plugin.saveSettings(); for (const leaf of this.app.workspace.getLeavesOfType(VIEW_DASHBOARD)) await leaf.view.render(); }));
+    new Setting(containerEl).setName('右侧研究网页').setDesc('DeepSeek 等网页在同一个右栏中打开，登录状态保留在本机。').addButton(b => b.setButtonText('管理常用链接').onClick(() => new ResearchLinksModal(this.plugin).open()));
+    new Setting(containerEl).setName('日历与日常提醒').setDesc('原生左栏包含日历、番茄钟、喝水/休息与健身打卡。').addButton(b => b.setButtonText('提醒设置').onClick(() => new WellnessSettingsModal(this.plugin).open()));
     containerEl.createEl('h3', { text: '应用外壳' });
     new Setting(containerEl).setName('左侧栏').setDesc('区段导航栏的显示方式')
       .addDropdown((d) => {
@@ -2414,7 +4014,7 @@ class JrsSettingTab extends PluginSettingTab {
         d.addOption('icon', '仅图标');
         d.addOption('hidden', '隐藏');
         d.setValue(s.sidebarMode);
-        d.onChange(async (v) => { s.sidebarMode = v; await this.plugin.saveSettings(); });
+        d.onChange(async (v) => { s.sidebarMode = v; await this.plugin.saveSettings(); for (const leaf of this.app.workspace.getLeavesOfType(VIEW_DASHBOARD)) await leaf.view.render(); });
       });
 
     containerEl.createEl('h3', { text: '外观工作室' });
@@ -2430,6 +4030,11 @@ class JrsSettingTab extends PluginSettingTab {
         if (v === '' || /^#[0-9a-fA-F]{6}$/.test(v)) { s.accentCustom = v; await this.plugin.saveSettings(); this.plugin.applyAppearance(); }
       });
     });
+    new Setting(containerEl).setName('工作台风格').setDesc('玻璃材质与独立明暗配色').addDropdown((dropdown) => {
+      dropdown.addOption('night', '夜航玻璃 · 3D 阅读台').addOption('auto', '跟随 Obsidian').addOption('day', '白昼玻璃');
+      dropdown.setValue(s.workspaceTheme || 'night').onChange(async (value) => { s.workspaceTheme = value; await this.plugin.saveSettings(); this.plugin.applyAppearance(); });
+    });
+    new Setting(containerEl).setName('自动打开研究助手').setDesc('打开工作站和阅读文献时，展开右侧研究助手').addToggle((toggle) => toggle.setValue(s.openAssistantOnDashboard).onChange(async (value) => { s.openAssistantOnDashboard = value; await this.plugin.saveSettings(); }));
     new Setting(containerEl).setName('毛玻璃卡片').addToggle((t) => t.setValue(s.glass).onChange(async (v) => { s.glass = v; await this.plugin.saveSettings(); this.plugin.applyAppearance(); }));
     const slider = (name, key, min, max, step, desc) => {
       const st = new Setting(containerEl).setName(name).setDesc(desc || '');
@@ -2489,6 +4094,7 @@ class JrsSettingTab extends PluginSettingTab {
     numSetting('每几个番茄进入长休', 'pomoLongEvery', '默认 4');
 
     containerEl.createEl('h3', { text: 'arXiv' });
+    new Setting(containerEl).setName('研究方向标签').setDesc('在 AI 发现中，为常用关键词或完整检索式设置名称，可添加、更新和删除。').addButton(b => b.setButtonText('管理方向标签').onClick(() => { this.app.setting.close(); this.plugin.gotoSection('discover'); }));
     new Setting(containerEl).setName('检索关键词').addText((t) => {
       t.setValue(s.arxivQuery);
       t.onChange(async () => { s.arxivQuery = t.getValue(); s.arxivCache = null; await this.plugin.saveSettings(); });
@@ -2536,6 +4142,7 @@ class JrsSettingTab extends PluginSettingTab {
       await this.plugin.saveSettings();
       new Notice('已重置');
     }));
+    SectionWorkspace.settings(this);
   }
 }
 
@@ -2547,17 +4154,25 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
     this.pomo = new PomoEngine(this);
+    Object.assign(this, WellnessMethods);
+    this.startWellnessReminders();
+    this.pdfResearch = new PdfResearch(this); this.pdfResearch.start();
     this.libFilterTopic = '';
 
     this.registerView(VIEW_DASHBOARD, (leaf) => new DashboardView(leaf, this));
     this.registerView(VIEW_LIBRARY, (leaf) => new LibraryView(leaf, this));
     this.registerView(VIEW_SIDE, (leaf) => new SidePanelView(leaf, this));
-    this.addRibbonIcon('telescope', 'Jensen 科研工作站', () => this.activateDashboard());
+    this.registerView(VIEW_LIFE, (leaf) => new LifePanelView(leaf, this));
+    this.addRibbonIcon('book-open', 'Jensen 科研工作站', () => this.activateDashboard());
     this.addSettingTab(new JrsSettingTab(this.app, this));
 
     const cmds = [
       ['open-dashboard', '打开工作站', () => this.activateDashboard()],
       ['open-library', '打开文献库（独立视图）', () => this.activateLibrary()],
+      ['pdf-annotate', 'PDF：捕获选区并批注', async () => { this.pdfResearch.captureSelection(); await this.activateSidePanel(); const view = this.app.workspace.getLeavesOfType(VIEW_SIDE)[0]?.view; if (view) { view.tab = 'pdf'; view.render(); } }],
+      ['life-panel', '打开左侧日历与生活', () => this.activateLifePanel()],
+      ['wellness', '喝水与休息提醒设置', () => new WellnessSettingsModal(this).open()],
+      ['research-links', '管理常用研究链接', () => new ResearchLinksModal(this).open()],
       ['sec-discover', '区段：AI 发现', () => this.gotoSection('discover')],
       ['sec-queue', '区段：阅读队列', () => this.gotoSection('queue')],
       ['sec-graph', '区段：论文图谱', () => this.gotoSection('graph')],
@@ -2568,11 +4183,13 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       ['new-submission', '新建投稿', () => new AddSubmissionModal(this).open()],
       ['capture', '快速记想法（收件箱）', () => new CaptureModal(this).open()],
       ['daily-digest', '生成今日小结（写入日记）', () => this.generateDailyDigest()],
-      ['side-panel', '打开右侧工具栏（番茄钟/查期刊/记想法）', () => this.activateSidePanel()],
+      ['side-panel', '打开研究助手（文献/写作/工具）', () => this.activateSidePanel()],
       ['add-paper', '添加文献', () => new AddPaperModal(this).open()],
       ['import-pdf', '批量导入 PDF 文件夹', () => new ImportFolderModal(this).open()],
       ['start-pomo', '开始专注（番茄钟）', () => { if (this.pomo.phase === 'idle') this.pomo.start(); }],
       ['gen-matrix', '生成文献矩阵', () => this.generateMatrix()],
+      ['export-csv', '导出文献 CSV', () => this.exportPapers('csv', this.getPapers())],
+      ['export-bibtex', '导出文献 BibTeX', () => this.exportPapers('bib', this.getPapers())],
       ['gen-bases', '生成 Bases 数据库', () => this.generateBases()],
       ['gen-graph', '重建论文图谱', () => this.generateGraphCanvas(true)],
       ['init-survey', '初始化综述大纲', () => this.ensureSurveyNote(true)],
@@ -2591,6 +4208,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         editorCallback: (editor) => this.aiEditSelection(editor, mode),
       });
     });
+    this.registerEvent(this.app.workspace.on('file-open', (file) => { if (file?.parent) this._currentDocumentFolder = file.parent.path === '/' ? '' : file.parent.path; }));
+    this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+      if (Array.isArray(file?.children)) menu.addItem((item) => item.setTitle('设为工作站文献来源').setIcon('library').onClick(async () => { await this.setSourceFolder(file.path); await this.gotoSection('library'); }));
+    }));
     this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor) => {
       if (!editor || !editor.getSelection || !editor.getSelection().trim()) return;
       menu.addItem((mi) => mi.setTitle('AI 学术润色').setIcon('wand-2').onClick(() => this.aiEditSelection(editor, 'polish')));
@@ -2631,12 +4252,16 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   onunload() {
     this.pomo.destroy();
+    this.pdfResearch?.destroy();
     this.app.workspace.detachLeavesOfType(VIEW_DASHBOARD);
     this.app.workspace.detachLeavesOfType(VIEW_LIBRARY);
     this.app.workspace.detachLeavesOfType(VIEW_SIDE);
+    this.app.workspace.detachLeavesOfType(VIEW_LIFE);
+    this.app.workspace.detachLeavesOfType(VIEW_WEB);
     document.body.removeClass('od-glass', 'jrs-bg-on');
+    delete document.body.dataset.jrsTheme;
     /* 清理注入到 body 的内联样式变量 */
-    ['--od-accent', '--od-accent-soft', '--od-blur', '--od-card-alpha',
+    ['--od-accent', '--od-accent-soft', '--od-accent-text', '--od-blur', '--od-card-alpha',
       '--od-radius-l', '--od-radius-m', '--od-gap', '--od-bg-dim',
       '--jrs-bg', '--jrs-bg-image'].forEach((k) => document.body.style.removeProperty(k));
   }
@@ -2651,6 +4276,26 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const stored = await this.loadData();
     this.settings = Object.assign({}, structuredClone(DEFAULT_SETTINGS), stored);
     this.settings.ai = Object.assign({}, structuredClone(DEFAULT_SETTINGS.ai), stored?.ai || {});
+    if (!stored?.workspaceTheme && stored?.accent === 'blue' && !stored.accentCustom) this.settings.accent = 'emerald';
+    if (!this.settings.wellnessLog || typeof this.settings.wellnessLog !== 'object') this.settings.wellnessLog = {};
+    this.settings.wellnessReminders = Object.assign({}, DEFAULT_SETTINGS.wellnessReminders, stored?.wellnessReminders);
+    if (!this.settings.pdfAnnotations || typeof this.settings.pdfAnnotations !== 'object') this.settings.pdfAnnotations = {};
+    if (!this.settings.pdfReadingPositions || typeof this.settings.pdfReadingPositions !== 'object' || Array.isArray(this.settings.pdfReadingPositions)) this.settings.pdfReadingPositions = {};
+    for (const [path, position] of Object.entries(this.settings.pdfReadingPositions)) {
+      if (!position || typeof position !== 'object') delete this.settings.pdfReadingPositions[path];
+      else this.settings.pdfReadingPositions[path] = ResearchCore.normalizeReadingPosition(position);
+    }
+    if (!['active', 'reading', 'todo', 'all'].includes(this.settings.deckFilter)) this.settings.deckFilter = 'active';
+    if (!['3d', 'list'].includes(this.settings.deckMode)) this.settings.deckMode = '3d';
+    this.settings.discoveryTags = Array.isArray(this.settings.discoveryTags) ? this.settings.discoveryTags.filter(tag => tag && typeof tag.label === 'string' && typeof tag.query === 'string' && tag.label.trim() && tag.query.trim()) : [];
+    if (!['compact','comfortable'].includes(this.settings.journalDensity)) this.settings.journalDensity = 'compact';
+    for (const [path, list] of Object.entries(this.settings.pdfAnnotations)) this.settings.pdfAnnotations[path] = Array.isArray(list) ? list.filter((entry) => entry && typeof entry.id === 'string' && Number.isInteger(entry.page) && typeof entry.text === 'string') : [];
+    if (!Array.isArray(this.settings.commonLinks)) this.settings.commonLinks = structuredClone(DEFAULT_SETTINGS.commonLinks);
+    this.settings.commonLinks = this.settings.commonLinks.filter((link) => link && typeof link.name === 'string' && /^https?:\/\//i.test(link.url));
+    if (typeof this.settings.sourceFolder !== 'string') this.settings.sourceFolder = '';
+    if (!Object.hasOwn(stored || {}, 'sourceFolder')) { const file = this.app.workspace.getActiveFile(); if (file?.parent) this.settings.sourceFolder = file.parent.path === '/' ? '' : file.parent.path; }
+    if (!Array.isArray(this.settings.savedLibraryViews)) this.settings.savedLibraryViews = [];
+    this.settings.savedLibraryViews = this.settings.savedLibraryViews.filter((view) => view && typeof view.name === 'string' && view.state && typeof view.state === 'object');
     if (!Array.isArray(this.settings.topics)) this.settings.topics = [...DEFAULT_TOPICS];
     if (!Array.isArray(this.settings.hiddenCards)) this.settings.hiddenCards = [];
     if (!Array.isArray(this.settings.customCards)) this.settings.customCards = [];
@@ -2673,7 +4318,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   /** 库内路径字段统一清洗：反斜杠→正斜杠、去尾斜杠、非法字符拦截 */
   normalizeSettingPaths() {
-    const keys = ['libFolder', 'pdfFolder', 'questionsFolder', 'submissionsFolder', 'inboxFolder', 'basesFolder', 'dailyFolder'];
+    const keys = ['libFolder', 'pdfFolder', 'questionsFolder', 'submissionsFolder', 'inboxFolder', 'basesFolder', 'dailyFolder', 'annotationsFolder'];
     let warned = false;
     for (const k of keys) {
       const v = this.settings[k];
@@ -2690,7 +4335,12 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   applyAppearance() {
     const s = this.settings;
-    const hex = (/^#[0-9a-fA-F]{6}$/.test(s.accentCustom || '') && s.accentCustom) || (ACCENTS[s.accent] || ACCENTS.blue).hex;
+    document.body.dataset.jrsTheme = s.workspaceTheme || 'night';
+    let hex = (/^#[0-9a-fA-F]{6}$/.test(s.accentCustom || '') && s.accentCustom) || (ACCENTS[s.accent] || ACCENTS.blue).hex;
+    if (s.workspaceTheme === 'day' && s.accent === 'emerald' && !s.accentCustom) hex = '#087b58';
+    const rgb = hex.match(/[a-f0-9]{2}/gi).map((channel) => parseInt(channel, 16) / 255).map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+    const luminance = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+    document.body.style.setProperty('--od-accent-text', luminance > 0.25 ? '#072c21' : '#ffffff');
     document.body.style.setProperty('--od-accent', hex);
     document.body.style.setProperty('--od-accent-soft', hexToRgba(hex, 0.14));
     document.body.style.setProperty('--od-blur', `${s.blurPx}px`);
@@ -2721,33 +4371,66 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   async smartOpenFile(f) {
     const ws = this.app.workspace;
     let cur = null;
-    try { cur = ws.getMostRecentLeaf ? ws.getMostRecentLeaf() : ws.activeLeaf; } catch (e) { cur = null; }
+    try { cur = ws.activeLeaf?.getRoot() === ws.rootSplit ? ws.activeLeaf : ws.getMostRecentLeaf?.(); } catch (e) { cur = null; }
     const vt = cur && cur.view && cur.view.getViewType ? cur.view.getViewType() : '';
     if (vt !== VIEW_DASHBOARD && vt !== VIEW_LIBRARY) {
-      await ws.getLeaf(false).openFile(f);
-      return;
+      const leaf = cur?.parent && cur.getRoot() === ws.rootSplit && !cur.getViewState().pinned ? cur : ws.getLeaf('tab');
+      await leaf.openFile(f, { active: true }); await ws.revealLeaf(leaf); ws.setActiveLeaf(leaf, { focus: true });
+      if (leaf === this._fileLeaf) this._fileLeafPath = f.path;
+      return leaf;
     }
     /* JRS 视图内：复用同一个文件标签页，避免标签堆积 */
-    if (!this._fileLeaf || !this._fileLeaf.view) this._fileLeaf = ws.getLeaf('tab');
-    await this._fileLeaf.openFile(f);
+    ws.setActiveLeaf(cur, { focus: false });
+    if (!this._fileLeaf?.parent || this._fileLeaf.getRoot() !== ws.rootSplit || this._fileLeaf.parent !== cur.parent || this._fileLeaf.getViewState().pinned || this._fileLeaf.view.file?.path !== this._fileLeafPath) this._fileLeaf = ws.getLeaf('tab');
+    await this._fileLeaf.openFile(f, { active: true });
+    this._fileLeafPath = f.path;
+    await ws.revealLeaf(this._fileLeaf);
+    ws.setActiveLeaf(this._fileLeaf, { focus: true });
+    return this._fileLeaf;
   }
 
   async activateDashboard() {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(VIEW_DASHBOARD);
-    if (existing.length) { workspace.revealLeaf(existing[0]); return; }
-    await workspace.getLeaf(true).setViewState({ type: VIEW_DASHBOARD, active: true });
+    if (existing.length) { await workspace.revealLeaf(existing[0]); workspace.setActiveLeaf(existing[0], { focus: true }); }
+    else await workspace.getLeaf(true).setViewState({ type: VIEW_DASHBOARD, active: true });
+    if (this.settings.openAssistantOnDashboard) await this.activateSidePanel(false);
+    await this.activateLifePanel(false);
   }
 
-  async activateSidePanel() {
+  async openResearchWeb(address) {
+    const url = new URL(address); if (!['http:', 'https:'].includes(url.protocol)) throw new Error('仅支持 HTTP(S) 网页');
+    await this.activateSidePanel(false);
+    const leaf = this.app.workspace.getLeavesOfType(VIEW_SIDE)[0];
+    if (!leaf) throw new Error('右侧研究助手暂不可用');
+    await leaf.view.openWeb(url.href); this.app.workspace.revealLeaf(leaf);
+    return leaf;
+  }
+
+  async activateLifePanel(focus = true) {
+    const workspace = this.app.workspace;
+    const existing = workspace.getLeavesOfType(VIEW_LIFE);
+    const leaf = existing[0] || workspace.getLeftLeaf(false);
+    if (!leaf) return;
+    if (!existing.length) await leaf.setViewState({ type: VIEW_LIFE, active: false });
+    workspace.leftSplit?.expand?.(); const active = workspace.activeLeaf;
+    await workspace.revealLeaf(leaf);
+    if (!focus && active && active !== leaf) workspace.setActiveLeaf(active, { focus: false });
+    else if (focus) workspace.setActiveLeaf(leaf, { focus: true });
+  }
+
+  async activateSidePanel(focus = true) {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(VIEW_SIDE);
-    const leaf = existing.length ? existing[0] : workspace.getRightLeaf(false);
-    if (!existing.length) await leaf.setViewState({ type: VIEW_SIDE, active: true });
-    else {
-      workspace.revealLeaf(leaf);
-      if (leaf.isCollapsed?.()) leaf.expand?.();
-    }
+    const leaf = existing[0] || workspace.getRightLeaf(false);
+    if (!leaf) return;
+    if (!existing.length) await leaf.setViewState({ type: VIEW_SIDE, active: false });
+    workspace.rightSplit?.expand?.();
+    const active = workspace.activeLeaf;
+    await workspace.revealLeaf(leaf);
+    if (!focus && active && active !== leaf) workspace.setActiveLeaf(active, { focus: false });
+    else if (focus) workspace.setActiveLeaf(leaf, { focus: true });
+    leaf.view.refreshContext?.();
   }
 
   async openInboxNote() {
@@ -2767,7 +4450,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const leaf = existing.length ? existing[0] : workspace.getLeaf(true);
     if (!existing.length) await leaf.setViewState({ type: VIEW_LIBRARY, active: true });
     else {
-      workspace.revealLeaf(leaf);
+      await workspace.revealLeaf(leaf); workspace.setActiveLeaf(leaf, { focus: true });
       if (this.libFilterTopic && leaf.view instanceof LibraryView) {
         leaf.view._panel.topicFilter = this.libFilterTopic;
         this.libFilterTopic = '';
@@ -2856,27 +4539,30 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   /* ---------- 文献 ---------- */
 
-  getPapers() {
+  getPaperNotes() {
     const folder = this.settings.libFolder;
     const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder + '/') || f.path === folder);
     return files.map((f) => {
       const fm = (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {};
       const topics = Array.isArray(fm.topics) ? fm.topics : (typeof fm.topics === 'string' && fm.topics ? [fm.topics] : []);
-      const authors = Array.isArray(fm.authors) ? fm.authors.join(', ') : (fm.authors || '');
+      const authors = Array.isArray(fm.authors) ? fm.authors.join(', ') : String(fm.authors || '');
       const arr = authors.split(/[,，;；]/).filter(Boolean);
       const progressRaw = fm.reading_progress ?? fm.progress ?? 0;
+      const readingState = ResearchCore.normalizeReadingState(fm.status, progressRaw);
       return {
         file: f, path: f.path, added: f.stat.ctime,
-        title: fm.title || f.basename,
+        title: String(fm.title || f.basename),
         authors, authorsShort: arr.length ? arr[0] + (arr.length > 1 ? ' 等' : '') : '',
         year: fm.year ? String(fm.year) : '',
-        venue: fm.venue || '',
-        status: STATUSES.includes(fm.status) ? fm.status : '待读',
+        venue: String(fm.venue || ''),
+        status: readingState.status,
         priority: PRIORITIES.includes(fm.priority) ? fm.priority : '',
-        topics: topics.filter(Boolean),
-        rating: typeof fm.rating === 'number' ? fm.rating : 0,
-        progress: Math.max(0, Math.min(100, Number(progressRaw) || 0)),
-        pdf: fm.pdf || '',
+        topics: topics.filter((topic) => typeof topic === 'string' && topic.trim()),
+        rating: Math.max(0, Math.min(5, Math.round(Number(fm.rating) || 0))),
+        progress: readingState.progress,
+        pdf: typeof fm.pdf === 'string' ? fm.pdf : '',
+        doi: typeof fm.doi === 'string' ? fm.doi : '',
+        url: typeof fm.url === 'string' ? fm.url : '',
         summary: typeof fm.summary === 'string' ? fm.summary : '',
         project: typeof fm.project === 'string' ? fm.project : '',
         fmCas: typeof fm.cas === 'string' ? fm.cas : '',
@@ -2886,6 +4572,72 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         fmTier: typeof fm.cast_tier === 'string' ? fm.cast_tier : '',
       };
     });
+  }
+
+  sourceContains(path) {
+    const folder = this.settings.sourceFolder;
+    return !folder || path === folder || path.startsWith(folder + '/');
+  }
+
+  sourceFolderOptions() {
+    const folders = new Set(['', this.settings.libFolder, this.settings.sourceFolder]);
+    const pdfs = this.app.vault.getFiles().filter((file) => file.extension.toLowerCase() === 'pdf');
+    for (const pdf of pdfs) {
+      const parts = pdf.path.split('/'); parts.pop();
+      while (parts.length) { folders.add(parts.join('/')); parts.pop(); }
+    }
+    return [...folders].sort((a, b) => a.localeCompare(b, 'zh')).map((path) => ({ path, count: pdfs.filter((pdf) => !path || pdf.path.startsWith(path + '/')).length }));
+  }
+
+  async setSourceFolder(path) {
+    const folder = path === '/' ? '' : String(path).replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (folder) {
+      const target = this.app.vault.getAbstractFileByPath(folder);
+      if (!target || !Array.isArray(target.children)) throw new Error('所选目录不存在于当前知识库');
+    }
+    this.settings.sourceFolder = folder; await this.saveSettings();
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_DASHBOARD)) { if (leaf.view._panel) leaf.view._panel.reset(); await leaf.view.render(); }
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_LIBRARY)) leaf.view._panel.reset();
+    new Notice(`文献来源：${this.app.vault.getName()} / ${folder || '库根目录'}`);
+  }
+
+  currentDocumentFolder() {
+    const file = this.app.workspace.getActiveFile();
+    return file?.parent ? file.parent.path === '/' ? '' : file.parent.path : this._currentDocumentFolder ?? this.settings.sourceFolder;
+  }
+
+  getPapers() {
+    const notes = this.getPaperNotes();
+    const pdfs = this.app.vault.getFiles().filter((file) => file.extension.toLowerCase() === 'pdf' && this.sourceContains(file.path));
+    const byPdf = new Map(); const pdfPaths = new Set(pdfs.map((file) => file.path));
+    const result = [];
+    for (const note of notes) {
+      const pdf = toPosix(note.pdf);
+      if (!this.sourceContains(note.path) && !pdfPaths.has(pdf)) continue;
+      if (pdf && byPdf.has(pdf)) continue;
+      if (pdf) byPdf.set(pdf, note);
+      result.push(note);
+    }
+    for (const file of pdfs) {
+      if (byPdf.has(file.path)) continue;
+      const guessed = guessFromFilename(file.name);
+      result.push({ file, path: file.path, added: file.stat.ctime, title: guessed.title, authors: '', authorsShort: '', year: guessed.year, venue: '',
+        status: '待读', priority: '', topics: [], rating: 0, progress: 0, pdf: file.path, summary: '', project: '', doi: '', url: '', isPdfOnly: true,
+        fmCas: '', fmCasTop: false, fmXr: '', fmCcf: '', fmTier: '' });
+    }
+    return result;
+  }
+
+  async preparePaper(paper) {
+    if (!paper.isPdfOnly) return paper;
+    const existing = this.getPaperNotes().find((note) => toPosix(note.pdf) === paper.pdf);
+    if (existing) { Object.assign(paper, existing, { isPdfOnly: false }); return paper; }
+    if (!this._paperNoteJobs) this._paperNoteJobs = new Map();
+    if (!this._paperNoteJobs.has(paper.pdf)) this._paperNoteJobs.set(paper.pdf, this.createPaperNote({ title: paper.title, year: paper.year, pdf: paper.pdf, status: '待读', topics: [] }, false));
+    try {
+      const file = await this._paperNoteJobs.get(paper.pdf);
+      Object.assign(paper, { file, path: file.path, isPdfOnly: false }); return paper;
+    } catch (error) { this._paperNoteJobs.delete(paper.pdf); throw error; }
   }
 
   getPapersSorted(sort) {
@@ -2907,11 +4659,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   /** 进度推进：>0 自动转阅读中，=100 自动转已完成 */
   async bumpProgress(p, delta) {
-    const next = Math.max(0, Math.min(100, p.progress + delta));
+    await this.preparePaper(p);
     await this.app.fileManager.processFrontMatter(p.file, (fm) => {
-      fm.reading_progress = next;
-      if (next >= 100) fm.status = '已完成';
-      else if (next > 0 && (fm.status === '待读' || !fm.status)) fm.status = '阅读中';
+      const state = ResearchCore.normalizeReadingState(fm.status, Number(fm.reading_progress ?? fm.progress ?? p.progress) + delta, 'progress');
+      fm.reading_progress = state.progress; fm.status = state.status;
     });
   }
 
@@ -2921,7 +4672,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     let cur = '';
     for (const part of parts) {
       cur = cur ? `${cur}/${part}` : part;
-      if (!this.app.vault.getAbstractFileByPath(cur)) await this.app.vault.createFolder(cur);
+      if (!this.app.vault.getAbstractFileByPath(cur)) {
+        try { await this.app.vault.createFolder(cur); }
+        catch (error) { if (!await this.app.vault.adapter.exists(cur)) throw error; }
+      }
     }
   }
 
@@ -2939,8 +4693,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       }
     }
     const name = sanitizeFilename(data.title) || `文献 ${todayKey()}`;
-    let path = `${folder}/${name}.md`;
-    if (this.app.vault.getAbstractFileByPath(path)) path = `${folder}/${name} (${todayKey()}).md`;
+    let path = await this.uniquePath(folder, `${name}.md`);
     const pdfVal = toPosix(data.pdf || '');
     const fm = [
       '---',
@@ -2952,18 +4705,21 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       data.priority ? `priority: ${data.priority}` : 'priority: ',
       data.topics && data.topics.length ? `topics: [${data.topics.map((t) => `"${t}"`).join(', ')}]` : 'topics: []',
       'rating: 0',
-      'reading_progress: 0',
+      `reading_progress: ${data.status === '已完成' ? 100 : 0}`,
+      `project: ${JSON.stringify(String(data.project || ''))}`,
+      ...(data.doi ? [`doi: ${JSON.stringify(String(data.doi))}`] : []),
+      ...(data.url ? [`url: ${JSON.stringify(String(data.url))}`] : []),
       pdfVal ? `pdf: "${pdfVal.replace(/"/g, "'")}"` : 'pdf: ""',
       ...(zoneFm.cas ? [`cas: ${zoneFm.cas}`] : []),
       ...(zoneFm.casTop ? ['cas_top: true'] : []),
       ...(zoneFm.xr ? [`xr_zone: ${zoneFm.xr}`] : []),
       ...(zoneFm.ccf ? [`ccf: ${zoneFm.ccf}`] : []),
       ...(zoneFm.cast ? [`cast_tier: ${zoneFm.cast}`] : []),
-      `added: ${todayKey()}`,,
+      `added: ${todayKey()}`,
       '---',
       '',
     ].join('\n');
-    const pdfLink = pdfVal && !isHttp(pdfVal) && !isExternalPath(pdfVal) ? `\n原文:  原文：[[${pdfVal.split('/').pop()}]]\n` : '';
+    const pdfLink = pdfVal && !isHttp(pdfVal) && !isExternalPath(pdfVal) ? `\n原文：[[${pdfVal.split('/').pop()}]]\n` : '';
     const body = [
       `# ${data.title}`, '', pdfLink.trim(),
       '## 一句话总结', '', '## 问题设定（卫星/目标/约束）', '',
@@ -2976,32 +4732,69 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   }
 
   async setPaperStatus(p, status) {
+    await this.preparePaper(p);
+    if (!STATUSES.includes(status)) throw new Error('未知的阅读状态');
     await this.app.fileManager.processFrontMatter(p.file, (fm) => {
-      fm.status = status;
-      if (status === '已完成') fm.reading_progress = 100;
+      const state = ResearchCore.normalizeReadingState(status, fm.reading_progress ?? fm.progress ?? 0, 'status');
+      fm.status = state.status; fm.reading_progress = state.progress;
     });
   }
-  async setPaperRating(p, rating) { await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.rating = rating; }); }
-  async setPaperPriority(p, priority) { await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.priority = priority || ''; }); }
-  async openPaper(p) { await this.smartOpenFile(p.file); }
+  async setPaperRating(p, rating) { await this.preparePaper(p); await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.rating = Math.max(0, Math.min(5, Math.round(Number(rating) || 0))); }); }
+  async setPaperPriority(p, priority) { await this.preparePaper(p); await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.priority = PRIORITIES.includes(priority) ? priority : ''; }); }
+  async openPaper(p) { await this.preparePaper(p); this._contextPaperPath = p.path; await this.smartOpenFile(p.file); }
 
-  async openReading(p) {
-    await this.smartOpenFile(p.file);
+  async openReading(p, { split = false } = {}) {
+    await this.preparePaper(p);
+    this._contextPaperPath = p.path;
+    this.settings.lastReadingPath = p.path;
+    await this.saveSettings();
+    if (p.status === '待读') await this.setPaperStatus(p, '阅读中');
+    if (this.settings.openAssistantOnDashboard) await this.activateSidePanel(false);
     const pdf = p.pdf;
-    if (!pdf || isHttp(pdf)) { if (isHttp(pdf)) window.open(pdf); return; }
-    const f = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
-    if (f instanceof TFile) {
-      /* 复用同一个右侧叶，避免 PDF 面板堆积 */
-      if (!this._rightPdfLeaf || !this._rightPdfLeaf.view) this._rightPdfLeaf = this.app.workspace.getRightLeaf(false);
-      await this._rightPdfLeaf.openFile(f, { active: false });
-    } else new Notice('PDF 不在库内：可用「PDF 入库」迁移后分栏阅读');
+    if (!pdf) { await this.smartOpenFile(p.file); return; }
+    if (!split || isHttp(pdf) || isExternalPath(pdf)) { await this.openPdf(pdf); return; }
+    const file = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
+    if (file instanceof TFile) {
+      const ws = this.app.workspace;
+      const savedPosition = structuredClone(this.pdfResearch.readingPosition(file.path));
+      const previousNote = this._readingNoteLeaf;
+      if (previousNote?.parent && previousNote.getRoot() === ws.rootSplit && previousNote.view.file?.path === this._readingNotePath && !previousNote.getViewState().pinned) {
+        await previousNote.openFile(p.file, { active: true }); await ws.revealLeaf(previousNote);
+        this._readingNoteLeaf = previousNote;
+      } else this._readingNoteLeaf = await this.smartOpenFile(p.file);
+      this._readingNotePath = p.file.path;
+      if (this._readingNoteLeaf === this._fileLeaf) this._fileLeafPath = p.file.path;
+      const previousPdf = this._readingPdfLeaf;
+      if (!previousPdf?.parent || previousPdf.getRoot() !== ws.rootSplit || previousPdf === this._readingNoteLeaf || previousPdf.view.getViewType() !== 'pdf' || previousPdf.view.file?.path !== this._readingPdfPath || previousPdf.getViewState().pinned) this._readingPdfLeaf = ws.getLeaf('split', 'vertical');
+      await this._readingPdfLeaf.openFile(file, { active: true });
+      this._readingPdfPath = file.path;
+      await ws.revealLeaf(this._readingPdfLeaf);
+      await this.pdfResearch.restorePosition(file.path, this._readingPdfLeaf, savedPosition);
+    } else new Notice('PDF 不在库内：可用「外部 PDF 入库」迁移后分栏阅读');
   }
 
   async openPdf(pdf) {
     if (!pdf) return;
     if (isHttp(pdf)) { window.open(pdf); return; }
     const f = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
-    if (f instanceof TFile) { this.smartOpenFile(f); return; }
+    if (f instanceof TFile) {
+      const ws = this.app.workspace;
+      const savedPosition = structuredClone(this.pdfResearch.readingPosition(f.path));
+      const splitLeaf = this._readingPdfLeaf, noteLeaf = this._readingNoteLeaf;
+      // Collapse only the reader pair we created, while both panes are still unchanged and unpinned.
+      const collapse = splitLeaf?.parent && noteLeaf?.parent && splitLeaf !== noteLeaf && splitLeaf.getRoot() === ws.rootSplit && noteLeaf.getRoot() === ws.rootSplit
+        && splitLeaf.view.getViewType() === 'pdf' && splitLeaf.view.file?.path === this._readingPdfPath && noteLeaf.view.file?.path === this._readingNotePath
+        && !splitLeaf.getViewState().pinned && !noteLeaf.getViewState().pinned;
+      let leaf;
+      if (collapse) {
+        await noteLeaf.openFile(f, { active: true }); leaf = noteLeaf;
+        if (leaf === this._fileLeaf) this._fileLeafPath = f.path;
+        splitLeaf.detach(); this._readingPdfLeaf = this._readingNoteLeaf = null; this._readingPdfPath = this._readingNotePath = null;
+        await ws.revealLeaf(leaf);
+      } else leaf = await this.smartOpenFile(f);
+      if (leaf) await this.pdfResearch.restorePosition(f.path, leaf, savedPosition);
+      return;
+    }
     if (isExternalPath(pdf)) {
       try {
         const electron = window.require && window.require('electron');
@@ -3036,7 +4829,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     };
     walk(folderPath);
     if (!pdfs.length) throw new Error('没有找到 PDF');
-    if (copyIntoVault) await this.ensureFolder(this.settings.pdfFolder);
+    const destination = this.settings.sourceFolder || this.settings.pdfFolder;
+    if (copyIntoVault) await this.ensureFolder(destination);
     const existing = new Set(this.getPapers().map((p) => p.title.toLowerCase()));
     const res = { created: 0, skipped: 0, failed: 0 };
     for (let i = 0; i < pdfs.length; i += 1) {
@@ -3048,7 +4842,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       try {
         let pdfField = toPosix(full);
         if (copyIntoVault) {
-          const rel = `${this.settings.pdfFolder}/${base}`;
+          const rel = `${destination}/${base}`;
           if (!(this.app.vault.getAbstractFileByPath(rel) instanceof TFile)) {
             const buf = fs.readFileSync(full);
             const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -3069,13 +4863,14 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const fs = window.require('fs');
     const papers = this.getPapers().filter((p) => p.pdf && isExternalPath(p.pdf));
     if (!papers.length) { new Notice('没有外部路径的 PDF'); return; }
-    await this.ensureFolder(this.settings.pdfFolder);
+    const destination = this.settings.sourceFolder || this.settings.pdfFolder;
+    await this.ensureFolder(destination);
     let ok = 0; let fail = 0;
     new Notice(`开始迁移 ${papers.length} 个 PDF…`);
     for (const p of papers) {
       try {
         const base = toPosix(p.pdf).split('/').pop();
-        const rel = `${this.settings.pdfFolder}/${base}`;
+        const rel = `${destination}/${base}`;
         if (!(this.app.vault.getAbstractFileByPath(rel) instanceof TFile)) {
           const buf = fs.readFileSync(p.pdf);
           const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -3084,7 +4879,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.pdf = rel; });
         const content = await this.app.vault.cachedRead(p.file);
         if (!content.includes(`[[${base}]]`)) {
-          await this.app.vault.modify(p.file, content.replace(/^# .+\n/, (m) => `${m}\n原文:  原文：[[${base}]]\n`));
+          await this.app.vault.modify(p.file, content.replace(/^# .+\n/, (m) => `${m}\n原文：[[${base}]]\n`));
         }
         ok += 1;
       } catch (e) { fail += 1; console.error('[JRS] PDF 迁移失败', p.pdf, e); }
@@ -3211,23 +5006,36 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   }
 
   async readPaperBody(paper) {
+    await this.preparePaper(paper);
     const content = await this.app.vault.cachedRead(paper.file);
-    return content.split('---').slice(2).join('---').slice(0, 4000);
+    const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').slice(0, 4000);
+    if (paper.pdf && !isHttp(paper.pdf) && !isExternalPath(paper.pdf)) {
+      try { return await this.pdfResearch.readText(toPosix(paper.pdf)) + '\n\n[个人笔记]\n' + body; }
+      catch (error) {
+        const substantive = body.replace(/^#+.*$/gm, '').replace(/^原文.*$/gm, '').replace(/^\s*- \[[ xX]\].*$/gm, '').trim();
+        if (substantive.length < 30) throw error;
+        return `[无法获取 PDF 正文：${error.message}。仅依据以下已有笔记。]\n${body}`;
+      }
+    }
+    const substantive = body.replace(/^#+.*$/gm, '').replace(/^原文.*$/gm, '').replace(/^\s*- \[[ xX]\].*$/gm, '').trim();
+    if (substantive.length < 30) throw new Error('尚无可用原文或实质笔记，请先打开本地 PDF 或补充笔记');
+    return '[仅有个人笔记，未读取 PDF 正文]\n' + body;
   }
 
   async aiSummarize(paper) {
     const source = await this.readPaperBody(paper);
     const out = await this.aiChat(
-      '你是严谨的科研助理。根据文献笔记生成四个部分的简明中文要点。只输出 markdown 正文。',
+      '你是严谨的科研助理。仅依据给定 PDF 摘取与笔记生成四个部分的简明中文要点。未提供的信息明确写未提供，禁止根据标题猜测结果或编造实验。只输出 markdown 正文。',
       `文献笔记：\n${source}\n\n请输出（使用这些确切标题）：\n## 一句话总结\n## 问题设定（卫星/目标/约束）\n## 求解算法\n## 可借鉴点`,
  );
-    const content = await this.app.vault.cachedRead(paper.file);
-    let c = content;
-    ['一句话总结', '问题设定（卫星/目标/约束）', '求解算法', '可借鉴点'].forEach((h) => {
-      const m = out.match(new RegExp(`## ${h.replace(/[()]/g, '\\$&')}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`));
-      if (m && m[1].trim()) c = replaceSection(c, h, m[1].trim());
+    const headings = ['一句话总结', '问题设定（卫星/目标/约束）', '求解算法', '可借鉴点'];
+    const blocks = headings.map((heading) => {
+      const match = out.match(new RegExp(`## ${heading.replace(/[()]/g, '\\$&')}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`));
+      return { heading, text: match?.[1]?.trim() || '' };
     });
-    await this.app.vault.modify(paper.file, c);
+    if (blocks.some((block) => !block.text)) throw new Error('模型未完整返回四个章节，笔记未修改，请重试');
+    await this.backupFile(paper.file);
+    await this.app.vault.process(paper.file, (latest) => blocks.reduce((result, block) => replaceSection(result, block.heading, block.text), latest));
     new Notice('AI 摘要已写入');
     await this.smartOpenFile(paper.file);
   }
@@ -3235,22 +5043,23 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   async aiGuide(paper) {
     const source = await this.readPaperBody(paper);
     const out = await this.aiChat(
-      '你是导师，为研究生生成论文导读问题。只输出 markdown 正文。',
+      '你是导师，仅依据给定 PDF 摘取和笔记为研究生生成论文导读问题。未提供的结论标明未知，不编造实验与来源。只输出 markdown 正文。',
       `文献：\n${source}\n\n生成 10 个帮助深入理解该论文的问题，每题附 2-3 句参考答案。格式：\n## 导读十问\n1. **问题**\n   - 参考：…`,
       1400,
  );
-    const content = await this.app.vault.cachedRead(paper.file);
-    const m = out.match(/## 导读十问[\s\S]*/);
-    await this.app.vault.modify(paper.file, replaceSection(content, '导读十问', (m ? m[0] : out).replace(/^## 导读十问\s*\n/, '')));
+    const match = out.match(/## 导读十问[\s\S]*/);
+    const body = (match ? match[0] : out).replace(/^## 导读十问\s*\n/, '').trim();
+    if (!body) throw new Error('导读内容为空，笔记未修改');
+    await this.backupFile(paper.file);
+    await this.app.vault.process(paper.file, (latest) => replaceSection(latest, '导读十问', body));
     new Notice('导读十问已生成');
     await this.smartOpenFile(paper.file);
   }
 
   async aiMetadata(paper) {
-    const content = await this.app.vault.cachedRead(paper.file);
-    const body = content.split('---').slice(2).join('---').slice(0, 2000);
+    const body = await this.readPaperBody(paper);
     const out = await this.aiChat(
-      '从文献信息推断元数据，只输出 JSON。',
+      '仅从给定 PDF 正文与笔记提取元数据，不推测。没有明确证据的作者、年份、期刊留空；方向只从候选中选择。只输出 JSON。',
       `标题与内容：\n${paper.title}\n${body}\n\n输出 JSON：{"authors":"第一作者等","year":"2024","venue":"期刊/会议","priority":"高|中|低","topics":["从候选中选：${this.settings.topics.join('/')}"],"summary":"一句话中文总结"}`,
       500,
  );
@@ -3715,6 +5524,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       new Notice('请先选中要处理的段落文字');
       return;
     }
+    if (sel.length > 6000) { new Notice('选区超过 6000 字符，请按段落处理'); return; }
+    const from = { ...editor.getCursor('from') }; const to = { ...editor.getCursor('to') };
     const spec = {
       polish: ['学术润色', '改写为严谨的学术书面语：术语规范、逻辑连贯、去口语化。保持原意与长度相近，直接输出改写后的文字。'],
       expand: ['扩写深化', '在保持原意的前提下扩写：补充机理说明、对比视角与过渡句，篇幅约为原文 1.5-2 倍。直接输出扩写后的文字。'],
@@ -3724,12 +5535,13 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     try {
       const out = await this.aiChat(
         `你是运筹学/航天领域的学术写作助手。任务：${spec[0]}。要求：${spec[1]} 不要任何解释、前后缀或代码块。`,
-        sel.slice(0, 3000),
+        sel,
         1600,
  );
       const clean = out.trim().replace(/^```[a-z]*\n?|```$/g, '');
       if (!clean) throw new Error('模型返回为空');
-      editor.replaceSelection(clean);
+      if (editor.getRange(from, to) !== sel) throw new Error('原选区已变化，请重新选择文字后处理');
+      editor.replaceRange(clean, from, to);
       new Notice(`${spec[0]}完成（Ctrl+Z 可撤销）`);
     } catch (e) {
       new Notice(`${spec[0]}失败：${e.message}`);
@@ -3741,6 +5553,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   async generateDailyDigest() {
     const key = todayKey();
     const log = (this.settings.pomoLog || {})[key] || {};
+    const wellness = this.wellnessDay(key);
     const papers = this.getPapers();
     const addedToday = papers.filter((p) => window.moment(p.added).format('YYYY-MM-DD') === key);
     const questions = await this.getQuestions();
@@ -3748,6 +5561,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const lines = [
       `- 专注：${log.count || 0} 个番茄 · ${log.minutes || 0} 分钟`,
       `- 文献：今日新增 ${addedToday.length} 篇；阅读中 ${papers.filter((p) => p.status === '阅读中').length} · 待读 ${papers.filter((p) => p.status === '待读').length}`,
+      `- 喝水 ${wellness.water} 次 · 休息 ${wellness.breaks} 次 · 健身${wellness.workouts ? '已打卡' : '未打卡'}`,
       `- 研究问题：待解答 ${questions.filter((q) => q.status === 'open').length} 个`,
       `- 投稿管线：${subs.filter((s) => ['写作中', '准备投稿'].includes(s.status)).length} 篇在写 · ${subs.filter((s) => ['已投', '审稿中', '大修', '小修'].includes(s.status)).length} 篇在审`,
     ];
@@ -3803,7 +5617,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       const fm = (this.app.metadataCache.getFileCache(f) || {}).frontmatter || {};
       return {
         file: f, added: f.stat.ctime,
-        title: fm.title || f.basename,
+        title: String(fm.title || f.basename),
         target: fm.target || '',
         status: SUB_STATUSES.includes(fm.status) ? fm.status : '写作中',
         deadline: fm.deadline || '',
@@ -3915,7 +5729,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const canvas = { nodes, edges, fmtMd: true };
     const path = this.settings.graphCanvas;
     const old = this.app.vault.getAbstractFileByPath(path);
-    if (old instanceof TFile) await this.app.vault.modify(old, JSON.stringify(canvas, null, 1));
+    if (old instanceof TFile) { await this.backupFile(old); await this.app.vault.modify(old, JSON.stringify(canvas, null, 1)); }
     else { await this.ensureFolder(path.split('/').slice(0, -1).join('/')); await this.app.vault.create(path, JSON.stringify(canvas, null, 1)); }
     new Notice(`图谱已生成：${topics.length} 主题 · 入图 ${papers.length - untagged.length} 篇（未标注 ${untagged.length} 篇归入"未标注方向"）`);
     if (open) await this.openGraphCanvas();
@@ -3935,8 +5749,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       m.titleEl.setText(title);
       m.contentEl.createEl('p', { text: message });
       new Setting(m.contentEl)
-        .addButton((b) => b.setButtonText('确认').setCta().onClick(() => { m.close(); resolve(true); }))
-        .addButton((b) => b.setButtonText('取消').onClick(() => { m.close(); resolve(false); }));
+        .addButton((b) => b.setButtonText('确认').setCta().onClick(() => { resolve(true); m.close(); }))
+        .addButton((b) => b.setButtonText('取消').onClick(() => { resolve(false); m.close(); }));
       m.onClose = () => resolve(false);
       m.open();
     });
@@ -3946,14 +5760,14 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const dir = this.settings.basesFolder;
     const existing = ['文献库', '阅读队列'].filter((n) => this.app.vault.getAbstractFileByPath(`${dir}/${n}.base`));
     if (existing.length) {
-      const ok = await this.confirmDialog('重建 Bases', `将覆盖 ${existing.join('、')} 的 Bases 配置（手工修改会丢失）。`);
+      const ok = await this.confirmDialog('重建 Bases', `将重建 ${existing.join('、')}。原配置会先保存到备份目录，可随时找回手工修改。`);
       if (!ok) { new Notice('已取消'); return; }
     }
     await this.ensureFolder(dir);
     const mk = async (name, yaml) => {
       const p = `${dir}/${name}.base`;
       const old = this.app.vault.getAbstractFileByPath(p);
-      if (old instanceof TFile) await this.app.vault.modify(old, yaml);
+      if (old instanceof TFile) { await this.backupFile(old); await this.app.vault.modify(old, yaml); }
       else await this.app.vault.create(p, yaml);
     };
     await mk('文献库', baseFile([`file.inFolder("${this.settings.libFolder}")`], [
@@ -4001,20 +5815,149 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   }
 
   async getSurveyProgress() {
-    const f = this.app.vault.getAbstractFileByPath(this.settings.surveyNote);
-    if (!(f instanceof TFile)) return [];
-    const content = await this.app.vault.cachedRead(f);
-    const sections = []; let cur = null;
-    for (const line of content.split('\n')) {
-      const h = line.match(/^## (.+)/);
-      if (h) { cur = { name: h[1].trim(), done: 0, total: 0 }; sections.push(cur); continue; }
-      const t = line.match(/^(\s*)- \[( |x|X)\] /);
-      if (t && cur) { cur.total += 1; if (t[2].toLowerCase() === 'x') cur.done += 1; }
-    }
-    return sections.filter((s) => s.total > 0);
+    const file = this.app.vault.getAbstractFileByPath(this.settings.surveyNote);
+    if (!(file instanceof TFile)) return [];
+    const content = await this.app.vault.cachedRead(file);
+    const sections = []; let current = null;
+    content.split('\n').forEach((raw, line) => {
+      const heading = raw.match(/^## (.+)/);
+      if (heading) { current = { name: heading[1].trim(), done: 0, total: 0, tasks: [] }; sections.push(current); return; }
+      const task = raw.match(/^(\s*)- \[( |x|X)\] (.+)$/);
+      if (task && current) {
+        const done = task[2].toLowerCase() === 'x'; current.total++; if (done) current.done++;
+        current.tasks.push({ line, text: task[3].trim(), done, raw });
+      }
+    });
+    return sections.filter((section) => section.total);
+  }
+
+  async toggleSurveyTask(task) {
+    const file = this.app.vault.getAbstractFileByPath(this.settings.surveyNote);
+    if (!(file instanceof TFile)) throw new Error('综述大纲不存在');
+    await this.app.vault.process(file, (content) => {
+      const lines = content.split('\n');
+      if (lines[task.line] !== task.raw) throw new Error('大纲已变化，请刷新后再勾选');
+      lines[task.line] = task.raw.replace(/^(\s*)- \[( |x|X)\]/, (_, indent) => `${indent}- [${task.done ? ' ' : 'x'}]`);
+      return lines.join('\n');
+    });
   }
 
   /* ---------- 文献矩阵 ---------- */
+
+  async uniquePath(folder, filename) {
+    await this.ensureFolder(folder);
+    const dot = filename.lastIndexOf('.');
+    const stem = dot > 0 ? filename.slice(0, dot) : filename;
+    const extension = dot > 0 ? filename.slice(dot) : '';
+    let path = `${folder}/${filename}`; let index = 1;
+    while (this.app.vault.getAbstractFileByPath(path)) path = `${folder}/${stem}-${index++}${extension}`;
+    return path;
+  }
+
+  async backupFile(file) {
+    const parent = this.settings.libFolder.split('/').slice(0, -1).join('/');
+    const folder = `${parent ? parent + '/' : ''}备份`;
+    const path = await this.uniquePath(folder, `${sanitizeFilename(file.basename)}-${window.moment().format('YYYYMMDD-HHmmss')}.${file.extension}`);
+    return this.app.vault.create(path, await this.app.vault.read(file));
+  }
+
+  async exportPapers(format, papers) {
+    if (!papers.length) { new Notice('没有可导出的文献'); return; }
+    if (!['csv', 'bib'].includes(format)) throw new Error('不支持的导出格式');
+    const parent = this.settings.libFolder.split('/').slice(0, -1).join('/');
+    const folder = `${parent ? parent + '/' : ''}导出`;
+    const path = await this.uniquePath(folder, `文献-${window.moment().format('YYYYMMDD-HHmmss')}.${format}`);
+    const content = format === 'csv' ? ResearchCore.papersToCsv(papers) : ResearchCore.papersToBibtex(papers);
+    const file = await this.app.vault.create(path, content);
+    new Notice(`已导出 ${papers.length} 篇 → ${file.path}`, 6000);
+    return file;
+  }
+
+  async applyPaperBatch(papers, patch) {
+    if (this._paperBatchBusy) throw new Error('上一批修改尚未完成');
+    const fields = Object.keys(patch);
+    if (!fields.length || fields.some((key) => !['status', 'priority', 'project'].includes(key))) throw new Error('无效的批量字段');
+    if ('status' in patch && !STATUSES.includes(patch.status)) throw new Error('无效的阅读状态');
+    if ('priority' in patch && patch.priority && !PRIORITIES.includes(patch.priority)) throw new Error('无效的优先级');
+    if ('project' in patch && typeof patch.project !== 'string') throw new Error('项目名称应为文本');
+    this._paperBatchBusy = true;
+    const history = []; const errors = [];
+    try {
+      for (const paper of papers) {
+        try {
+          await this.preparePaper(paper);
+          let snapshot;
+          await this.app.fileManager.processFrontMatter(paper.file, (fm) => {
+            const updates = { ...patch };
+            if ('status' in patch) {
+              const state = ResearchCore.normalizeReadingState(patch.status, fm.reading_progress ?? fm.progress ?? 0, 'status');
+              updates.status = state.status; updates.reading_progress = state.progress;
+            }
+            const before = {};
+            for (const key of Object.keys(updates)) before[key] = { exists: Object.hasOwn(fm, key), value: structuredClone(fm[key]) };
+            Object.assign(fm, updates);
+            snapshot = { file: paper.file, before, after: updates };
+          });
+          if (snapshot) history.push(snapshot);
+        } catch (error) { errors.push(`${paper.title}：${error.message}`); }
+      }
+      if (history.length) this._lastPaperBatch = history;
+      new Notice(`已更新 ${history.length} 篇${errors.length ? `，${errors.length} 篇失败` : '，可撤销上次批量修改'}`, 5000);
+      if (errors.length) console.warn('[JRS] 批量修改未完成项', errors);
+      return { updated: history.length, failed: errors.length };
+    } finally { this._paperBatchBusy = false; }
+  }
+
+  async undoPaperBatch() {
+    if (this._paperBatchBusy) throw new Error('请等待当前批量操作完成');
+    const history = this._lastPaperBatch || [];
+    if (!history.length) return;
+    this._paperBatchBusy = true;
+    let restored = 0; const pending = [];
+    try {
+      for (const snapshot of history) {
+        try {
+          let changed = false;
+          await this.app.fileManager.processFrontMatter(snapshot.file, (fm) => {
+            if (Object.entries(snapshot.after).some(([key, value]) => fm[key] !== value)) return;
+            for (const [key, entry] of Object.entries(snapshot.before)) {
+              if (entry.exists) fm[key] = entry.value; else delete fm[key];
+            }
+            changed = true;
+          });
+          if (changed) restored++; else pending.push(snapshot);
+        } catch (error) { pending.push(snapshot); }
+      }
+      this._lastPaperBatch = pending;
+      new Notice(`已撤销 ${restored} 篇${pending.length ? `；${pending.length} 篇已被修改或无法读取，保留当前内容` : ''}`, 5000);
+    } finally { this._paperBatchBusy = false; }
+  }
+
+  relatedPapers(paper, text = '') {
+    const tokens = [...new Set(String(text).toLowerCase().match(/[a-z]{3,}|[\u4e00-\u9fff]{2,}/g) || [])];
+    return this.getPapers().filter((candidate) => candidate.path !== paper?.path && candidate.status !== '已归档')
+      .map((candidate) => {
+        const shared = candidate.topics.filter((topic) => paper?.topics.includes(topic));
+        const corpus = `${candidate.title} ${candidate.summary} ${candidate.topics.join(' ')}`.toLowerCase();
+        const matches = tokens.filter((token) => corpus.includes(token)).length;
+        return { paper: candidate, shared, score: shared.length * 5 + matches * 2 + (candidate.project && candidate.project === paper?.project ? 3 : 0) };
+      }).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || b.paper.rating - a.paper.rating).slice(0, 5);
+  }
+
+  async appendPaperThought(paper, text) {
+    if (!paper?.file) throw new Error('请先打开一篇文献');
+    await this.preparePaper(paper);
+    const value = text.trim(); if (!value) throw new Error('请先输入想法');
+    const heading = '## 阅读想法';
+    const entry = `- ${window.moment().format('YYYY-MM-DD HH:mm')} ${value.replace(/\n/g, '\n  ')}`;
+    await this.app.vault.process(paper.file, (content) => {
+      const start = content.indexOf('\n' + heading + '\n');
+      if (start < 0) return content.trimEnd() + `\n\n${heading}\n\n${entry}\n`;
+      const next = content.indexOf('\n## ', start + heading.length + 2);
+      const at = next < 0 ? content.length : next;
+      return content.slice(0, at).trimEnd() + '\n' + entry + '\n\n' + content.slice(at).trimStart();
+    });
+  }
 
   async generateMatrix() {
     const papers = this.getPapersSorted('year');
@@ -4038,7 +5981,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       rows.join('\n'), '',
     ].join('\n');
     const old = this.app.vault.getAbstractFileByPath(matrixPath);
-    if (old instanceof TFile) { await this.app.vault.modify(old, content); await this.smartOpenFile(old); }
+    if (old instanceof TFile) { await this.backupFile(old); await this.app.vault.modify(old, content); await this.smartOpenFile(old); }
     else { await this.smartOpenFile(await this.app.vault.create(matrixPath, content)); }
     new Notice(`文献矩阵已生成（${papers.length} 篇）`);
   }

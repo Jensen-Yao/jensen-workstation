@@ -1,3 +1,84 @@
+# v0.22.0 交接补充 · 2026-10-30
+
+最新说明见 [CHANGES-v0.22.md](CHANGES-v0.22.md)。已部署当前库与共享母版，保留用户设置。
+
+- 页面工作区代码在 `src/section-workspace.js`，样式在 `src/sections.css`；均由 build 嵌入发行文件。Dashboard 路由的 queue/reader/graph/discover 使用 SectionWorkspace，其余页面在原有真实数据功能上增强。
+- AI 发现的 `discoveryTags` 为 `{label, query}` 数组；保存和点击仅填入查询，不自动联网。`journalDensity` 默认 compact；目标期刊详细说明折叠。
+- 投稿在三视图内部切换，期刊目录不再与管线堆叠。`SectionWorkspace.metadata` 等待文件缓存刷新，避免状态写入后显示旧列。
+- 章节任务保存后同步更新 task.raw/task.done，避免第二次勾选被过期检测拒绝。保留展开状态与局部统计。
+- 设置使用 Obsidian 自带独立窗口（CDP URL about:blank），通过 activeTab.containerEl 访问；主窗口 document 查不到设置内容。截图工具使用对应目标。
+- 总览研究桌面可折叠；长卡片内容在卡内滚动。不要移回原生左右栏已有功能。
+- 检查共 72 项通过。截图在 screenshots/v022。工具 verify-v020 继续验证现有 PDF/侧栏流程；verify-v022 检查新增页面交互。
+- 发布整理：历次一次性补丁、旧 QA jobs 和旧截图已从当前工作树清退；保留当前测试和构建工具，见 [tools/README.md](tools/README.md)。下方 v0.19 工具表仅是历史档案，不代表当前可执行工具集。日志、运行报告、私有备份均不进入发布内容。
+- 本地备份归档根目录为 `F:/OrbitDesk-archive/v0.22.0-20261030/`；先前 `.jrs-tmp/backups/` 中的备份在该目录的 `generated-before-validation/.jrs-tmp/backups/`。下方历史路径是清理前位置。
+
+---
+
+# v0.21.0 交接补充 · 2026-10-30
+
+最新变更见 [CHANGES-v0.21.md](CHANGES-v0.21.md)。下方保留 v0.20 和 v0.19 的历史上下文。
+
+- PDF 原生 eventBus 的 pagechanging/scalechanging 由 `PdfResearch.trackReaders()` 订阅；换文件和卸载时解绑。`pdfReadingPositions` 保存页码/缩放，独立于 reading_progress。
+- `openReading(paper)` 默认打开 PDF 标签页；只有明确的「分栏阅读」入口传 `{ split: true }`。3D/列表卡片、文献库标题和队列普通点击直达 PDF。无 PDF 时退回笔记。
+- 普通阅读收起同次会话创建、未被用户改作他用且未固定的阅读分栏。`smartOpenFile` 同时检查标签组、固定状态与保存的文件路径；不要覆盖用户后来切换的文件。`revealLeaf` 必须 await，并正确恢复/设置 activeLeaf，避免视觉页面与实际文件打开目标不一致。
+- `openReading`、`openPdf` 与 `readText` 保留已存位置。不要让后台 AI 读取把书签重置到第一页。
+- 批注操作按 PDF 排队；`update` 检查过期编辑，`remove/undoDelete` 仅修改对应 Markdown 标记块。保留用户其他手写内容。
+- `SidePanelView` 在同次会话缓存选区草稿和译文；旧请求完成不能清除新选区。PDF 页码事件只更新控件，不整体重绘输入区。
+- 3D 阅读台增加筛选和完整标题；可见卡片最多七张，空队列禁用不适用按钮。明确选中的卡片不能被旧 PDF 上下文覆盖。
+- 右栏重复品牌标题/计时器已移除；用户要求的原生左栏、单一右栏入口和网页实例保留规则不变。
+- 当前检查：27 项 Node、23 项实机，以及九主区/四助手模式检查。验证工具文件名仍沿用 v020。截图命令 `node tools/capture-v020.mjs v021`。
+- v0.20 更新前程序与设置备份：`F:/OrbitDesk/.jrs-tmp/backups/v020-before-v021-20261030-184348/`。
+
+---
+
+# v0.20.0 交接补充 · 2026-10-30
+
+下方 v0.19 交接内容保留为历史上下文。当前实现、用户确认的边界与检查结果以 [CHANGES-v0.20.md](CHANGES-v0.20.md) 为准，视觉规则见 [DESIGN.md](DESIGN.md)。
+
+## 用户最新要求与实现
+
+- 参考图的重点是玻璃卡片、透视/3D 卡组和层次，不只是绿色强调色。首页已实现真实文献卡组与右侧联动。
+- 「左边栏」指 Obsidian 原生左停靠栏。日历、番茄钟、喝水/休息、健身打卡在 `LifePanelView`，不要重新塞回内部导航栏。
+- 右栏的助手和网页必须在同一个原生按钮内。`SidePanelView` 内部隐藏/显示网页，不销毁 webview。DeepSeek 在这里打开，用户自行登录。
+- 文献来自 `settings.sourceFolder`，递归扫描实际 PDF，关联既有笔记、去重。当前目录 28 PDF 与旧索引 44 笔记口径不同，界面必须显示来源。
+- 用户对小字号、低对比文字、假按钮敏感。已加入直接明暗切换，普通说明与操作至少 12px；逐项实机验证。
+- PDF 选区、页面坐标、高亮、批注、翻译预览和 Markdown 保存已实现。摘要/导读读取真实 PDF 前 8 页（上限 18000 字符），无原文且笔记为空则拒绝生成。插件高亮不修改 PDF 二进制，不能宣传为可在其他阅读器查看的内嵌批注。
+
+## 源码组织与构建
+
+| 源码 | 用途 |
+| --- | --- |
+| `src/core.cjs` | 检索语法、状态不变量、布局排布、CSV/BibTeX；可直接 Node 测试 |
+| `src/library-panel.js` | 文献库工作流、来源、筛选、批量操作与分页 |
+| `src/side-panel.js` | 同一个右栏里的文献、批注、写作、工具与网页模式 |
+| `src/research-browser.js` | 独立 webview 部件，持久化分区 `persist:jensen-research` |
+| `src/pdf-research.js` | 真实选区捕获、坐标归一化、高亮恢复与批注 Markdown |
+| `src/productivity.js` | 原生左栏、月历、日常记录、温和提醒 |
+| `src/reading-deck.js` | 透视文献卡组与队列/助手联动 |
+| `src/workspace.css` | 新设计系统、明暗主题、阅读台、原生侧栏和响应式 |
+
+编辑 `src/` 后运行 `node tools/build.mjs`，会替换发布文件的 `BEGIN GENERATED` 区域。不要直接编辑生成区。main.js 中其他插件数据方法目前仍直接维护。运行时仍只需 main.js、styles.css、manifest.json 三个文件。
+
+## 验证与部署
+
+```powershell
+node tools/build.mjs
+node --check main.js
+node --test tests/core.test.cjs
+node tools/verify-v020.mjs
+node tools/check-surfaces.mjs
+```
+
+CDP 使用 9223。集成检查写入独立临时目录并在 finally 恢复设置，翻译测试用受控响应；已有一次真实 API 小样翻译成功。见 `.jrs-tmp/verification.json`、`.jrs-tmp/surfaces.json`。
+
+部署目录仍为 `F:/ObWork/Study/.obsidian/plugins/jensen-workstation/` 与中央母版 `F:/ObWork/.shared-plugins/jensen-workstation/`。不要复制 data.json 或覆盖用户笔记。旧程序及 data/workspace 备份在 `F:/OrbitDesk/.jrs-tmp/backups/20261030-173607/`。
+
+尚需注意：PDF 原生视图内部 API 在未来 Obsidian 版本可能变化；扫描 PDF 需 OCR。AI 跨论文综述的旧 modal 关闭只停止自动打开，不取消 requestUrl 的在途请求。语义向量索引、Word/LaTeX 导出与自动 OCR 不属于本轮已实现功能。
+
+---
+
+## 以下为 v0.19 原始交接档案
+
 # Jensen 科研工作站 · 开发交接文档
 
 > **版本**: v0.19.0 | **日期**: 2026-10-30 | **状态**: 功能审计 A- / 视觉 6.5 / 建议上架

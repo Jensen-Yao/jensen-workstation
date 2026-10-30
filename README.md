@@ -4,7 +4,44 @@
 
 > 融合 [Hearth](https://github.com/ondreu/Hearth)（MIT）的卡片仪表盘美学与 [Research OS](https://github.com/kivvng726/obsidian-research-os)（MIT）的文献工作流思路，取长补短、专注科研场景。感谢两个优秀开源项目的启发。
 
-![仪表盘](screenshots/dashboard.jpg)
+## v0.22 · 全页面工作区与可定制方向
+
+AI 发现支持方向标签与右栏原文；投稿分成管线、速查和紧凑期刊目录。阅读队列、笔记书架、实时主题图谱和章节进展分别重构，研究桌面可折叠，设置支持分类搜索。
+
+[下载 v0.22.0](https://github.com/Jensen-Yao/jensen-workstation/releases/tag/v0.22.0)
+
+[本轮变更](CHANGES-v0.22.md) · [AI 发现预览](screenshots/v022/discover-day.png) · [期刊目录预览](screenshots/v022/journals-day.png) · [设置预览](screenshots/v022/settings.png)
+
+![AI 发现工作区](screenshots/v022/discover-day.png)
+
+![紧凑期刊目录](screenshots/v022/journals-day.png)
+
+其他页面：[文献库](screenshots/v022/library-day.png) · [阅读队列](screenshots/v022/queue-day.png) · [笔记书架](screenshots/v022/reader-day.png) · [主题图谱](screenshots/v022/graph-day.png) · [写作进展](screenshots/v022/progress-day.png) · [投稿管线](screenshots/v022/submit-day.png) · [文献问答](screenshots/v022/ask-day.png) · [研究桌面](screenshots/v022/lower-desktop.png)
+
+开发与验证见 [tools/README.md](tools/README.md)。当前工具集已移除历次一次性补丁和旧 QA 脚本，历史实现仍可通过 Git 查阅。
+
+## v0.21 · 阅读续读与批注管理
+
+点击卡片或文献标题直接阅读 PDF，分栏阅读作为独立选项。PDF 自动记住页码与缩放；批注可编辑、搜索、筛选和撤销删除。切换选区保留会话草稿，3D 阅读台显示完整标题与阅读位置，右栏进一步精简，左上角换为简洁书页标识。
+
+[本轮变更与验证](CHANGES-v0.21.md) · [白昼预览](screenshots/v021-day.png) · [夜航预览](screenshots/v021-night.png)
+
+## v0.20 · 玻璃阅读台与研究伴侣
+
+- **真实 3D 文献卡组**与队列、右侧详情联动，支持列表与自动浏览。
+- **按文件夹管理文献**：选择来源目录，扫描本地 PDF；文件夹右键也可设为来源。未索引的 PDF 在首次精读时建立笔记。
+- **PDF 阅读、批注、翻译**：默认直接打开 PDF，可选择笔记/PDF 在中心并排；PDF 选区送到右栏，可高亮、评论、翻译并保存带页码的 Markdown。插件高亮保存在本地，不修改原 PDF。
+- **一个右侧入口**：助手与网页内部切换；DeepSeek 直接在右栏打开，登录状态使用本机持久化分区保留。
+- **Obsidian 原生左栏**：月历、番茄钟、喝水/休息记录、健身打卡、提醒和日记待办。
+- **白昼 / 夜航玻璃**直接切换；字号与对比优化；检索、批量撤销、CSV/BibTeX 导出。
+
+从命令面板选择「Jensen 科研工作站：打开工作站」即可展开两侧面板。在 PDF 中选中文字后，右栏进入批注模式。常用链接在右栏「工具」中管理；提醒间隔在左栏的铃铛中设置。
+
+[v0.20 白昼阅读台](screenshots/v020-day.png) · [v0.20 夜航阅读台](screenshots/v020-night.png)
+
+[本轮变更与验证](CHANGES-v0.20.md) · [开发交接](HANDOFF.md)
+
+## 早期功能介绍与版本记录
 
 ## ✨ 功能全景
 

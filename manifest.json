@@ -1,9 +1,9 @@
 {
   "id": "jensen-workstation",
   "name": "Jensen 科研工作站",
-  "version": "0.19.0",
+  "version": "0.22.0",
   "minAppVersion": "1.5.0",
-  "description": "Jensen Research Workstation: card dashboard, literature library with reading queue, arXiv discovery, knowledge Q&A over your own papers, submission tracker, pomodoro & calendar. 科研一体化工作台（中文界面）。",
+  "description": "3D glass research desk, folder-based PDF library, persistent PDF highlights and translations, unified research/web companion, native calendar and daily habits. 中文科研阅读工作台。",
   "author": "Jensen-Yao",
   "authorUrl": "https://github.com/Jensen-Yao",
   "isDesktopOnly": false
