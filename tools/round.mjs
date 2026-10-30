@@ -9,7 +9,7 @@
  * 前置：Obsidian 以 --remote-debugging-port=9223 启动
  * ========================================================================== */
 import { execSync } from 'node:child_process';
-import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, rmSync, readdirSync, readFileSync, writeFileSync, existsSync, cpSync } from 'node:fs';
 
 const run = (cmd, opts = {}) => execSync(cmd, { cwd: 'F:/OrbitDesk', encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts });
 const log = (s) => console.log(s);
@@ -61,13 +61,16 @@ function release(ver, notes) {
   writeFileSync('F:/OrbitDesk/manifest.json', JSON.stringify(m, null, 2));
   run('node --check main.js');
   run('git add -A');
-  run(`git commit -q -m "v${ver}: ${notes.split('\n')[0]}"`);
+  try { run(`git commit -q -m "v${ver}: ${notes.split('\n')[0]}"`); } catch (e) { log('(commit 跳过：无新变更或已提交)'); }
   run('git push -q origin main');
-  run(`git tag v${ver}`);
+  run(`git tag ${ver.startsWith('v') ? ver : 'v' + ver} 2>nul || exit 0`, { shell: 'cmd.exe' });
   run(`git push -q origin v${ver}`);
   run('cp main.js manifest.json styles.css /tmp/');
   run(`gh release create v${ver} --title "v${ver}" --notes ${JSON.stringify(notes)} /tmp/main.js /tmp/manifest.json /tmp/styles.css`, { stdio: 'inherit' });
-  run('cmd /c "F:\\\\ObWork\\\\同步插件更新.bat" < /dev/null', { shell: 'cmd.exe' });
+  /* 同步中央母版：直接拷三件套（bat 含 pause 会挂起） */
+  for (const f of ['main.js', 'manifest.json', 'styles.css']) {
+    cpSync(`F:/OrbitDesk/${f}`, `F:/ObWork/.shared-plugins/jensen-workstation/${f}`);
+  }
   log(`✅ v${ver} 发布并同步母版`);
 }
 
