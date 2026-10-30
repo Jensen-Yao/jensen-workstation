@@ -1300,8 +1300,8 @@ body.jrs-bg-on .jrs-view {
 
 body.jrs-bg-on.od-glass .od-card {
   background: color-mix(in srgb, var(--background-secondary) 55%, transparent);
-  backdrop-filter: blur(22px) saturate(170%);
-  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(var(--od-blur, 22px)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--od-blur, 22px)) saturate(170%);
   box-shadow: 0 8px 28px -12px rgba(0, 0, 0, 0.35);
 }
 
@@ -2365,3 +2365,11 @@ body.jrs-bg-on .jrs-hero-sub { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); }
 .jrs-view input[type="text"],
 .jrs-view input[type="search"],
 .jrs-side-input { border-radius: 12px; }
+
+
+/* ---------- v0.14 · R3 视觉加固 ---------- */
+.jrs-main { min-width: 0; }
+.jrs-page { min-width: 340px; overflow-wrap: anywhere; }
+.jrs-side { max-width: min(320px, 42vw); }
+.jrs-view input::placeholder { text-overflow: ellipsis; }
+.od-chip { white-space: nowrap; }

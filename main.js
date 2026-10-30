@@ -666,6 +666,7 @@ class DashboardView extends ItemView {
   positionShell(shell, l) {
     const { colW, rowH, gap, cols } = this._metrics;
     const w = Math.min(l.w, cols);
+    if (l.x + w > cols) l.x = Math.max(0, cols - w);
     shell.style.left = `${l.x * (colW + gap)}px`;
     shell.style.top = `${l.y * (rowH + gap)}px`;
     shell.style.width = `${w * colW + (w - 1) * gap}px`;
@@ -1308,8 +1309,9 @@ class DashboardView extends ItemView {
         const data = JSON.parse(await this.app.vault.cachedRead(f));
         const nodes = data.nodes || [];
         const edges = data.edges || [];
-        if (nodes.length) {
-          const xs = nodes.map((nd) => nd.x); const ys = nodes.map((nd) => nd.y);
+        const okNodes = nodes.filter((nd) => Number.isFinite(nd.x) && Number.isFinite(nd.y));
+        if (okNodes.length) {
+          const xs = okNodes.map((nd) => nd.x); const ys = okNodes.map((nd) => nd.y);
           const minX = Math.min(...xs) - 160; const maxX = Math.max(...xs) + 160;
           const minY = Math.min(...ys) - 60; const maxY = Math.max(...ys) + 60;
           const W = 640; const H = Math.max(200, Math.round((W * (maxY - minY)) / (maxX - minX)));
@@ -1334,7 +1336,7 @@ class DashboardView extends ItemView {
           svg += '</svg>';
           thumb.innerHTML = svg;
           const cap = intro.createEl('div', { cls: 'od-hint' });
-          cap.textContent = `缩略预览：${nodes.filter((nd) => String(nd.id).startsWith('topic-')).length} 主题节点 · ${nodes.length} 节点 · ${edges.length} 连线（打开图谱可拖拽编辑）`;
+          cap.textContent = `缩略预览：${okNodes.filter((nd) => String(nd.id).startsWith('topic-')).length} 主题节点 · ${okNodes.length} 节点 · ${edges.length} 连线（打开图谱可拖拽编辑）`;
         }
       } catch (e) {
         thumb.createEl('div', { cls: 'od-hint', text: `图谱文件解析失败：${e.message}` });
@@ -1434,7 +1436,7 @@ class DashboardView extends ItemView {
       const item = qList.createEl('div', { cls: 'jrs-question-item' });
       const main = item.createEl('div', { cls: 'jrs-row-main' });
       const t = main.createEl('div', { cls: 'jrs-row-title', text: q.question });
-      t.onclick = () => this.smartOpenFile(q.file);
+      t.onclick = () => this.plugin.smartOpenFile(q.file);
       main.createEl('div', { cls: 'od-hint', text: `${q.status === 'answered' ? '✅ 已解答' : '❓ 待解答'} · ${window.moment(q.added).format('M月D日')}` });
       const st = item.createEl('button', { cls: `od-btn od-btn--sm${q.status === 'answered' ? '' : ' od-btn--primary'}` });
       st.textContent = q.status === 'answered' ? '重新打开' : '标记已解答';
@@ -1521,12 +1523,16 @@ class DashboardView extends ItemView {
         const row = g.createEl('div', { cls: 'jrs-paper-row jrs-submit-row' });
         const main = row.createEl('div', { cls: 'jrs-row-main' });
         const t = main.createEl('div', { cls: 'jrs-row-title', text: `${s.title} → ${s.target}` });
-        t.onclick = () => this.smartOpenFile(s.file);
+        t.onclick = () => this.plugin.smartOpenFile(s.file);
         const hint = main.createEl('div', { cls: 'od-hint' });
         let meta = `${s.status} · ${window.moment(s.added).format('M月D日')} 起`;
         if (s.deadline) {
-          const d = window.moment(s.deadline, 'YYYY-MM-DD').diff(window.moment().startOf('day'), 'days');
-          meta += d >= 0 ? ` · 截稿还剩 ${d} 天` : ` · 截稿已过 ${-d} 天`;
+          const md = window.moment(s.deadline, 'YYYY-MM-DD');
+          if (!md.isValid()) { meta += ' · 截稿日期无效'; }
+          else {
+            const d = md.diff(window.moment().startOf('day'), 'days');
+            meta += d >= 0 ? ` · 截稿还剩 ${d} 天` : ` · 截稿已过 ${-d} 天`;
+          }
         }
         hint.textContent = meta;
         const acts = row.createEl('div', { cls: 'jrs-row-actions' });
@@ -1535,7 +1541,7 @@ class DashboardView extends ItemView {
         st.title = '点击流转到下一状态';
         st.onclick = async () => { await this.plugin.cycleSubmission(s); this.render(); };
         const open = acts.createEl('button', { cls: 'od-btn od-btn--sm', text: '打开' });
-        open.onclick = () => this.smartOpenFile(s.file);
+        open.onclick = () => this.plugin.smartOpenFile(s.file);
       });
     });
 
@@ -2186,7 +2192,11 @@ class AiSynthesisModal extends Modal {
     });
     new Setting(contentEl).setName('纳入文献数').addText((t) => {
       t.inputEl.type = 'number'; t.setValue('8');
-      t.onChange(() => { const v = parseInt(t.getValue(), 10); if (v > 1 && v <= 20) n = v; });
+      t.onChange(() => {
+        const v = parseInt(t.getValue(), 10);
+        if (v > 1 && v <= 20) n = v;
+        else { new Notice('纳入数限 2-20，已忽略该值'); t.setValue(String(n)); }
+      });
     });
     new Setting(contentEl).setName('研究目标（可选）').addText((t) => { t.onChange(() => { goal = t.getValue(); }); });
     const busy = contentEl.createEl('div', { cls: 'od-hint' });
@@ -2196,7 +2206,7 @@ class AiSynthesisModal extends Modal {
       try {
         const f = await this.plugin.aiSynthesis(topic, n, goal);
         busy.textContent = `✅ 已生成：${f.path}`;
-        this.smartOpenFile(f);
+        this.plugin.smartOpenFile(f);
       } catch (e) { busy.textContent = `❌ ${e.message}`; new Notice(`综述失败：${e.message}`); }
       b.setDisabled(false);
     }));
@@ -2442,8 +2452,7 @@ class JrsSettingTab extends PluginSettingTab {
 
     containerEl.createEl('h3', { text: '🗄 数据' });
     new Setting(containerEl).setName('导出插件设置').addButton((b) => b.setButtonText('复制 JSON').onClick(() => {
-      navigator.clipboard?.writeText(JSON.stringify(s, null, 2));
-      new Notice('设置已复制到剪贴板');
+      navigator.clipboard?.writeText(JSON.stringify(s, null, 2)).then(() => new Notice('设置已复制到剪贴板')).catch(() => new Notice('复制失败（剪贴板不可用）'));
     }));
     new Setting(containerEl).setName('重置排版布局').addButton((b) => b.setButtonText('重置').onClick(async () => {
       s.layout = {};
@@ -3541,7 +3550,16 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       out.target = true;
     }
     /* CCF 2026（含会议） */
-    const ccfHit = JOURNAL_BUILTIN.ccf.find((x) => x[0].toLowerCase() === name || (x[1] && x[1].toLowerCase() === name) || (x[0].toLowerCase().length > 8 && w1.has(...x[0].toLowerCase().split(/\s+/).slice(0, 1)) && w1.has(...x[0].toLowerCase().split(/\s+/).slice(-1))));
+    const ccfHit = JOURNAL_BUILTIN.ccf.find((x) => {
+      const xn = x[0].toLowerCase();
+      if (xn === name || (x[1] && x[1].toLowerCase() === name)) return true;
+      const xw = xn.split(/\s+/).filter((t) => t.length > 2);
+      if (xw.length >= 2 && xw.every((t) => w1.has(t))) {
+        const extra = [...w1].filter((t) => t.length > 2 && !xw.includes(t) && !['journal', 'transactions', 'of', 'the', 'on'].includes(t));
+        return extra.length === 0;
+      }
+      return false;
+    });
     if (ccfHit) {
       out.found = true;
       out.ccf = { grade: ccfHit[2], type: ccfHit[3] === 'conf' ? '会议' : '期刊', field: ccfHit[4] };
@@ -3582,6 +3600,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       f = await this.app.vault.create(path, `# AI 问答 ${todayKey()}\n\n`);
     }
     const safeA = item.a.trim().replace(/^### /gm, '#### ');
+    const srcLine = item.sources?.length
+      ? `
+
+来源：${item.sources.map((s) => `[[${s.file ? s.file.basename : s.basename}]]`).join('、')}` : '';
     await this.app.vault.append(f, `\n### Q: ${item.q}\n\n${safeA}${srcLine}\n`);
   }
 
@@ -3649,8 +3671,19 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (addedToday.length) lines.push(`- 新增：${addedToday.slice(0, 5).map((p) => p.title.slice(0, 18) + '…').join('；')}`);
     let f = this.findDailyNote();
     if (!f) {
-      const k = key;
-      f = await this.app.vault.create(this.dailyPath(), `# ${k}\n\n## 今日待办\n\n## 专注记录\n`);
+      try {
+        if (this.settings.dailyFolder) await this.ensureFolder(this.settings.dailyFolder);
+        const k = key;
+        f = await this.app.vault.create(this.dailyPath(), `# ${k}
+
+## 今日待办
+
+## 专注记录
+`);
+      } catch (e) {
+        new Notice(`日记创建失败：${e.message}（检查设置中的日记目录）`);
+        return;
+      }
     }
     const content = await this.app.vault.cachedRead(f);
     await this.app.vault.modify(f, replaceSection(content, '今日小结', lines.join('\n')));
@@ -3665,7 +3698,9 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const path = `${this.settings.inboxFolder}/${todayKey()}.md`;
     let f = this.app.vault.getAbstractFileByPath(path);
     if (!(f instanceof TFile)) f = await this.app.vault.create(path, `# 收件箱 ${todayKey()}\n\n`);
-    await this.app.vault.append(f, `\n- ${window.moment().format('HH:mm')} ${text}`);
+    const safeT = String(text).replace(/[\r\n]+/g, ' / ').slice(0, 2000);
+    await this.app.vault.append(f, `\n- ${window.moment().format('HH:mm')} ${safeT}`);
+
     return f;
   }
 
@@ -3703,7 +3738,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const content = [
       '---',
       `title: "${title.replace(/"/g, "'")}"`,
-      `target: ${target}`,
+      `target: "${String(target).replace(/"/g, "'")}"`,
       'status: 写作中',
       deadline ? `deadline: ${deadline}` : 'deadline: ',
       `created: ${todayKey()}`,
