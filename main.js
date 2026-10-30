@@ -222,7 +222,7 @@ class PomoEngine {
       this.plugin.saveSettings();
       this.plugin.appendPomoToDaily(s.pomoWork);
       const long = t.count % Math.max(1, s.pomoLongEvery) === 0;
-      new Notice(`🍅 专注完成！${long ? '休息长一点吧' : `休息 ${s.pomoBreak} 分钟`}`);
+      new Notice(`专注完成！${long ? '休息长一点吧' : `休息 ${s.pomoBreak} 分钟`}`);
       this.phase = long ? 'longbreak' : 'break';
       this.total = (long ? s.pomoLongBreak : s.pomoBreak) * 60;
       this.left = this.total; this._run();
@@ -344,7 +344,7 @@ class SidePanelView extends ItemView {
       if (!v) { new Notice('内容为空'); return; }
       await this.plugin.captureThought(v);
       cInput.value = '';
-      cHint.textContent = `✅ ${window.moment().format('HH:mm')} 已存`;
+      cHint.textContent = `${window.moment().format('HH:mm')} 已存`;
       new Notice('已存入今日收件箱 📥');
     };
     const inbox = this.plugin.findDailyNote ? null : null;
@@ -1421,7 +1421,7 @@ class DashboardView extends ItemView {
       const all = sections.reduce((a, s) => ({ d: a.d + s.done, t: a.t + s.total }), { d: 0, t: 0 });
       if (all.d === 0) {
         const cta = surveyCard.createEl('div', { cls: 'jrs-zero-cta' });
-        cta.createSpan({ text: '还没有任何勾选——打开大纲勾掉第一项，或点任意章节的 ✨ 直接让 AI 起草初稿' });
+        cta.createSpan({ text: '还没有任何勾选——打开大纲勾掉第一项，或点任意章节的起草按钮直接让 AI 生成初稿' });
       }
       const total = surveyCard.createEl('div', { cls: 'jrs-progress' });
       total.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${all.t ? (all.d / all.t) * 100 : 0}%`;
@@ -1477,7 +1477,7 @@ class DashboardView extends ItemView {
       const main = item.createEl('div', { cls: 'jrs-row-main' });
       const t = main.createEl('div', { cls: 'jrs-row-title', text: q.question });
       t.onclick = () => this.plugin.smartOpenFile(q.file);
-      main.createEl('div', { cls: 'od-hint', text: `${q.status === 'answered' ? '✅ 已解答' : '❓ 待解答'} · ${window.moment(q.added).format('M月D日')}` });
+      main.createEl('div', { cls: 'od-hint', text: `${q.status === 'answered' ? '已解答' : '❓ 待解答'} · ${window.moment(q.added).format('M月D日')}` });
       const st = item.createEl('button', { cls: `od-btn od-btn--sm${q.status === 'answered' ? '' : ' od-btn--primary'}` });
       st.textContent = q.status === 'answered' ? '重新打开' : '标记已解答';
       st.onclick = async () => { await this.plugin.toggleQuestion(q); this.render(); };
@@ -1535,7 +1535,7 @@ class DashboardView extends ItemView {
       if (r.cast) badges.appendChild(badge(`科协 ${r.cast}`, r.cast.startsWith('T1') || r.cast === 'A' ? 'top' : 'mid', r.castField ? `中国科协高质量目录 · ${r.castField}` : '中国科协高质量目录'));
       if (r.jcr) badges.appendChild(badge(`JCR ${r.jcr}`, 'mid'));
       if (r.target) badges.appendChild(badge('目标刊', 'cn', '已在投稿冲刺目标期刊库'));
-      if (r.warn) badges.appendChild(badge(`⚠️ 预警：${r.warn}`, 'top', '2025 国际期刊预警名单'));
+      if (r.warn) badges.appendChild(badge(`预警：${r.warn}`, 'top', '2025 国际期刊预警名单'));
     };
     qInput.oninput = () => { if (deb) clearTimeout(deb); deb = setTimeout(runQ, 250); };
     qInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); if (deb) clearTimeout(deb); runQ(); } };
@@ -1704,7 +1704,7 @@ class DashboardView extends ItemView {
         busy.textContent = '';
         await refreshList();
       } catch (e) {
-        busy.textContent = `❌ ${e.message}`;
+        busy.textContent = `${e.message}`;
         new Notice(`问答失败：${e.message}`);
       }
       asking = false;
@@ -1714,7 +1714,8 @@ class DashboardView extends ItemView {
     input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ask(); } };
 
     /* 空态：示例问题 chips（点击即填入提问） */
-    if (!document.querySelector('.jrs-ask-item')) {
+    const _hist = await this.plugin.getAskLogToday();
+    if (!_hist.length) {
       const sug = card.createEl('div', { cls: 'jrs-ask-suggest' });
       sug.createEl('div', { cls: 'od-hint', text: '试试这些问题：' });
       const chips = sug.createEl('div', { cls: 'od-chips' });
@@ -1812,7 +1813,7 @@ class LibraryPanel {
     });
     const pRow = root.createEl('div', { cls: 'od-filters' });
     ['全部', ...PRIORITIES, '无'].forEach((p) => {
-      const c = pRow.createEl('button', { cls: `od-filter${this.prioFilter === p ? ' is-active' : ''}`, text: p === '全部' ? '优先级：全部' : p });
+      const c = pRow.createEl('button', { cls: `od-filter${this.prioFilter === p ? ' is-active' : ''}`, text: p === '全部' ? '全部优先级' : p });
       c.onclick = () => { this.prioFilter = p; this.render(); };
     });
     const tRow = root.createEl('div', { cls: 'od-filters' });
@@ -2056,11 +2057,11 @@ class ImportFolderModal extends Modal {
       try {
         const res = await this.plugin.importPdfFolder(folder, recursive, copyIn, (msg) => { progress.textContent = msg; });
         new Notice(`导入完成：新增 ${res.created}，跳过 ${res.skipped}`);
-        resultEl.createEl('div', { cls: 'od-hint', text: `✅ 新增 ${res.created} · 跳过 ${res.skipped} · 失败 ${res.failed}` });
+        resultEl.createEl('div', { cls: 'od-hint', text: `新增 ${res.created} · 跳过 ${res.skipped} · 失败 ${res.failed}` });
         if (this.onDone) window.setTimeout(this.onDone, 400);
       } catch (err) {
         new Notice(`导入失败：${err.message}`);
-        resultEl.createEl('div', { cls: 'od-hint', text: `❌ ${err.message}` });
+        resultEl.createEl('div', { cls: 'od-hint', text: `${err.message}` });
       }
       b.setDisabled(false);
     }));
@@ -2216,8 +2217,8 @@ class AiPaperModal extends Modal {
         b.onClick(async () => {
           b.setDisabled(true);
           busy.textContent = `${name}生成中…`;
-          try { await fn(); busy.textContent = `✅ ${name}完成`; }
-          catch (e) { busy.textContent = `❌ ${e.message}`; new Notice(`${name}失败：${e.message}`); }
+          try { await fn(); busy.textContent = `${name}完成`; }
+          catch (e) { busy.textContent = `${e.message}`; new Notice(`${name}失败：${e.message}`); }
           b.setDisabled(false);
         });
       });
@@ -2258,15 +2259,19 @@ class AiSynthesisModal extends Modal {
     });
     new Setting(contentEl).setName('研究目标（可选）').addText((t) => { t.onChange(() => { goal = t.getValue(); }); });
     const busy = contentEl.createEl('div', { cls: 'od-hint' });
+    this._cancelled = false;
+    const origClose = this.onClose;
+    this.onClose = () => { this._cancelled = true; if (origClose) origClose(); };
     new Setting(contentEl).addButton((b) => b.setButtonText('生成综述').setCta().onClick(async () => {
       b.setDisabled(true);
-      busy.textContent = '正在阅读文献并综合…';
+      busy.textContent = '正在阅读文献并综合…（关闭弹窗可取消打开）';
       try {
         const f = await this.plugin.aiSynthesis(topic, n, goal);
-        busy.textContent = `✅ 已生成：${f.path}`;
+        if (this._cancelled) return;
+        busy.textContent = `已生成：${f.path}`;
         this.plugin.smartOpenFile(f);
-      } catch (e) { busy.textContent = `❌ ${e.message}`; new Notice(`综述失败：${e.message}`); }
-      b.setDisabled(false);
+      } catch (e) { if (!this._cancelled) { busy.textContent = `${e.message}`; new Notice(`综述失败：${e.message}`); } }
+      if (!this._cancelled) b.setDisabled(false);
     }));
   }
 }
@@ -2388,7 +2393,7 @@ class JrsSettingTab extends PluginSettingTab {
     containerEl.empty();
     const s = this.plugin.settings;
 
-    containerEl.createEl('h3', { text: '🧭 应用外壳' });
+    containerEl.createEl('h3', { text: '应用外壳' });
     new Setting(containerEl).setName('左侧栏').setDesc('区段导航栏的显示方式')
       .addDropdown((d) => {
         d.addOption('full', '展开（图标+文字）');
@@ -2398,7 +2403,7 @@ class JrsSettingTab extends PluginSettingTab {
         d.onChange(async (v) => { s.sidebarMode = v; await this.plugin.saveSettings(); });
       });
 
-    containerEl.createEl('h3', { text: '🎨 外观工作室' });
+    containerEl.createEl('h3', { text: '外观工作室' });
     new Setting(containerEl).setName('强调色（预设）').addDropdown((d) => {
       Object.entries(ACCENTS).forEach(([k, v]) => d.addOption(k, v.name));
       d.setValue(s.accent);
@@ -2442,7 +2447,7 @@ class JrsSettingTab extends PluginSettingTab {
       t.onChange(async () => { s.bgImage = t.getValue().trim(); await this.plugin.saveSettings(); this.plugin.applyAppearance(); });
     });
 
-    containerEl.createEl('h3', { text: '📁 路径' });
+    containerEl.createEl('h3', { text: '路径' });
     const pathSetting = (name, key, desc) => new Setting(containerEl).setName(name).setDesc(desc || '')
       .addText((t) => { t.setValue(s[key]); t.onChange(async () => { s[key] = t.getValue().trim(); await this.plugin.saveSettings(); }); });
     pathSetting('文献笔记目录', 'libFolder');
@@ -2455,7 +2460,7 @@ class JrsSettingTab extends PluginSettingTab {
     pathSetting('综述大纲笔记', 'surveyNote');
     pathSetting('Bases 目录', 'basesFolder');
 
-    containerEl.createEl('h3', { text: '🍅 番茄钟' });
+    containerEl.createEl('h3', { text: '番茄钟' });
     const numSetting = (name, key, desc) => new Setting(containerEl).setName(name).setDesc(desc || '')
       .addText((t) => {
         t.inputEl.type = 'number'; t.setValue(String(s[key]));
@@ -2469,22 +2474,22 @@ class JrsSettingTab extends PluginSettingTab {
     numSetting('长休时长（分钟）', 'pomoLongBreak', '默认 15');
     numSetting('每几个番茄进入长休', 'pomoLongEvery', '默认 4');
 
-    containerEl.createEl('h3', { text: '📡 arXiv' });
+    containerEl.createEl('h3', { text: 'arXiv' });
     new Setting(containerEl).setName('检索关键词').addText((t) => {
       t.setValue(s.arxivQuery);
       t.onChange(async () => { s.arxivQuery = t.getValue(); s.arxivCache = null; await this.plugin.saveSettings(); });
     });
     numSetting('默认显示条数', 'arxivMax');
 
-    containerEl.createEl('h3', { text: '🤖 AI 助手（OpenAI 兼容）' });
+    containerEl.createEl('h3', { text: 'AI 助手（OpenAI 兼容）' });
     new Setting(containerEl).setName('API Base URL').addText((t) => { t.setValue(s.ai.baseUrl); t.onChange(async () => { s.ai.baseUrl = t.getValue().trim(); await this.plugin.saveSettings(); }); });
     new Setting(containerEl).setName('API Key').addText((t) => { t.inputEl.type = 'password'; t.setValue(s.ai.apiKey); t.onChange(async () => { s.ai.apiKey = t.getValue().trim(); await this.plugin.saveSettings(); }); });
     new Setting(containerEl).setName('模型').addText((t) => { t.setValue(s.ai.model); t.onChange(async () => { s.ai.model = t.getValue().trim(); await this.plugin.saveSettings(); }); });
 
-    containerEl.createEl('h3', { text: '🧲 MinerU 解析（可选）' });
+    containerEl.createEl('h3', { text: 'MinerU 解析（可选）' });
     new Setting(containerEl).setName('MinerU 命令').addText((t) => { t.setValue(s.mineruCmd); t.onChange(async () => { s.mineruCmd = t.getValue().trim(); await this.plugin.saveSettings(); }); });
 
-    containerEl.createEl('h3', { text: '🔬 科研' });
+    containerEl.createEl('h3', { text: '科研' });
     new Setting(containerEl).setName('科研起始日').setDesc('YYYY-MM-DD').addText((t) => { t.setValue(s.researchStart); t.onChange(async () => { s.researchStart = t.getValue().trim(); await this.plugin.saveSettings(); }); });
     const topicSetting = new Setting(containerEl).setName('研究方向标签');
     const chipWrap = topicSetting.infoEl.createEl('div', { cls: 'od-chips' });
@@ -2508,7 +2513,7 @@ class JrsSettingTab extends PluginSettingTab {
       };
     });
 
-    containerEl.createEl('h3', { text: '🗄 数据' });
+    containerEl.createEl('h3', { text: '数据' });
     new Setting(containerEl).setName('导出插件设置').addButton((b) => b.setButtonText('复制 JSON').onClick(() => {
       navigator.clipboard?.writeText(JSON.stringify(s, null, 2)).then(() => new Notice('设置已复制到剪贴板')).catch(() => new Notice('复制失败（剪贴板不可用）'));
     }));
@@ -2644,6 +2649,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   }
 
   async saveSettings() {
+    if (!String(this.settings.libFolder || '').trim()) {
+      this.settings.libFolder = '科研工作台/文献';
+      new Notice('文献目录不能为空，已重置为默认');
+    }
     this.normalizeSettingPaths();
     await this.saveData(this.settings);
   }
@@ -2781,7 +2790,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   appendPomoToDaily(minutes) {
     try {
       const f = this.findDailyNote();
-      if (f) this.app.vault.append(f, `\n- 🍅 专注 ${minutes} 分钟（${window.moment().format('HH:mm')}）`);
+      if (f) this.app.vault.append(f, `\n- 专注 ${minutes} 分钟（${window.moment().format('HH:mm')}）`);
     } catch (e) { /* 不影响计时 */ }
   }
   todayPomoMinutes() { return (this.settings.pomoLog[todayKey()] || {}).minutes || 0; }
@@ -3723,10 +3732,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const questions = await this.getQuestions();
     const subs = this.getSubmissions();
     const lines = [
-      `- 🍅 专注：${log.count || 0} 个番茄 · ${log.minutes || 0} 分钟`,
-      `- 📚 文献：今日新增 ${addedToday.length} 篇；阅读中 ${papers.filter((p) => p.status === '阅读中').length} · 待读 ${papers.filter((p) => p.status === '待读').length}`,
-      `- ❓ 研究问题：待解答 ${questions.filter((q) => q.status === 'open').length} 个`,
-      `- 🎯 投稿管线：${subs.filter((s) => ['写作中', '准备投稿'].includes(s.status)).length} 篇在写 · ${subs.filter((s) => ['已投', '审稿中', '大修', '小修'].includes(s.status)).length} 篇在审`,
+      `- 专注：${log.count || 0} 个番茄 · ${log.minutes || 0} 分钟`,
+      `- 文献：今日新增 ${addedToday.length} 篇；阅读中 ${papers.filter((p) => p.status === '阅读中').length} · 待读 ${papers.filter((p) => p.status === '待读').length}`,
+      `- 研究问题：待解答 ${questions.filter((q) => q.status === 'open').length} 个`,
+      `- 投稿管线：${subs.filter((s) => ['写作中', '准备投稿'].includes(s.status)).length} 篇在写 · ${subs.filter((s) => ['已投', '审稿中', '大修', '小修'].includes(s.status)).length} 篇在审`,
     ];
     if (addedToday.length) lines.push(`- 新增：${addedToday.slice(0, 5).map((p) => p.title.slice(0, 18) + '…').join('；')}`);
     let f = this.findDailyNote();
@@ -3907,6 +3916,11 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   async generateBases() {
     const dir = this.settings.basesFolder;
+    const existing = ['文献库', '阅读队列'].filter((n) => this.app.vault.getAbstractFileByPath(`${dir}/${n}.base`));
+    if (existing.length) {
+      const ok = window.confirm(`将覆盖 ${existing.join('、')} 的 Bases 配置（手工修改会丢失）。继续？`);
+      if (!ok) { new Notice('已取消'); return; }
+    }
     await this.ensureFolder(dir);
     const mk = async (name, yaml) => {
       const p = `${dir}/${name}.base`;

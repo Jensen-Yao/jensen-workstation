@@ -37,10 +37,7 @@
 }
 
 /* ---------- 视图骨架 ---------- */
-.orbitdesk-view {
-  padding: var(--od-space-5);
-  height: 100%;
-  overflow-y: auto;
+.jrs-view {
   container-type: inline-size;
 }
 
@@ -2395,7 +2392,7 @@ body.jrs-bg-on .jrs-hero-sub { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); }
 /* ---------- v0.15 · R5 ---------- */
 /* scrim 加高覆盖副标题 */
 body.jrs-bg-on .jrs-topbar {
-  background: linear-gradient(to bottom, rgba(10,12,18,0.45), rgba(10,12,18,0.15) 70%, transparent);
+  background: linear-gradient(to bottom, rgba(10,12,18,0.50), rgba(10,12,18,0.18) 70%, transparent);
   margin: -6px -26px 0;
   padding: 20px 26px 16px;
 }
