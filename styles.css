@@ -2285,3 +2285,68 @@ body.jrs-bg-on .jrs-section-heading h2 {
 .jrs-side-input:focus { border-color: var(--od-accent); }
 
 .jrs-side-badges { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+
+/* ==========================================================================
+   v0.12 · Round1 视觉打磨包（严苛子代理批评回应）
+   ========================================================================== */
+
+/* V1 日历卡防截断：网格与字号收缩 */
+.od-cal { gap: 2px; }
+.od-cal-dow { font-size: 9.5px; padding: 3px 0; letter-spacing: 0.02em; }
+.od-cal-day { font-size: 11.5px; }
+[data-card-id="calendar"] .od-card-body { overflow: hidden; }
+[data-card-id="calendar"] .od-cal-day .dot { width: 3px; height: 3px; right: 2px; bottom: 2px; }
+[data-card-id="calendar"] .od-cal-day .dot--pomo { left: 2px; }
+
+/* V2 零态引导横幅 */
+.jrs-zero-cta {
+  padding: 8px 12px;
+  border-radius: var(--od-radius-m);
+  background: var(--od-accent-soft);
+  color: color-mix(in srgb, var(--od-accent) 85%, var(--text-normal));
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* V2 进度轨道加粗（0 态可辨识） */
+.od-progress-item .od-progressbar,
+.jrs-progress .od-progressbar { height: 6px; }
+.jrs-progress .od-progressbar { background-color: var(--background-modifier-border); background-image: none; }
+.od-progress-item .od-progressbar { background-image: none; background-color: var(--background-modifier-border); }
+
+/* V3 问答示例 chips */
+.jrs-ask-suggest { display: flex; flex-direction: column; gap: 6px; }
+
+/* V4 百分比纯文本化（去方块胶囊感） */
+.jrs-progress-pct { background: transparent; border: none; color: var(--od-accent); font-weight: 600; }
+
+/* V6 全站打磨 */
+/* 底部滚动渐隐（滚动暗示） */
+.jrs-page { mask-image: linear-gradient(to bottom, #000 calc(100% - 42px), transparent 100%); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 42px), transparent 100%); }
+
+/* 顶部 scrim：压住照片亮部保标题可读 */
+body.jrs-bg-on .jrs-topbar {
+  background: linear-gradient(to bottom, rgba(10, 12, 18, 0.30), transparent);
+  margin: -6px -26px 0;
+  padding: 20px 26px 14px;
+}
+body.jrs-bg-on .jrs-page-title h1,
+body.jrs-bg-on .jrs-page-title p,
+body.jrs-bg-on .jrs-hero-sub { text-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); }
+
+/* 徽章统一 pill */
+.jrs-zone-badge, .jrs-journal-tag, .od-status { border-radius: 999px; }
+
+/* discover 结果卡对齐 */
+.jrs-discover-results .jrs-card { width: 100%; }
+.jrs-discover-results .jrs-paper-row { align-items: center; }
+
+/* sidepanel 按钮等宽 */
+.jrs-side .od-btn { width: 100%; justify-content: center; }
+
+/* 番茄钟卡内部统一居中 */
+.od-pomo, .od-pomo-count { align-items: center; text-align: center; }
+.od-pomo-controls { justify-content: center; }
+
+/* 占位符可读性 */
+.jrs-view input::placeholder { color: var(--text-muted); opacity: 0.85; }

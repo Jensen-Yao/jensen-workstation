@@ -57,7 +57,7 @@ const SECTIONS = [
 
 /** 目标期刊库（EJOR 等运筹学顶刊 + 航天/卫星领域核心刊） */
 const JOURNALS = [
-  { abbr: 'EJOR', name: 'European Journal of Operational Research', field: '运筹学', tag: '顶刊', publisher: 'Elsevier', match: '调度/优化方法+充分实验', link: 'https://www.editorialmanager.com/ejor/', note: '偏方法严谨与计算实验，规划类综述与方法文均常见', cas: '1区', jcr: 'Q1', tier: 'A' },
+  { abbr: 'EJOR', name: 'European Journal of Operational Research', field: '运筹学', tag: '顶刊', publisher: 'Elsevier', match: '调度/优化方法+充分实验', link: 'https://www.editorialmanager.com/ejor/', note: '偏方法严谨与计算实验，规划类综述与方法类论文均常见', cas: '1区', jcr: 'Q1', tier: 'A' },
   { abbr: 'OR', name: 'Operations Research', field: '运筹学', tag: '顶刊', publisher: 'INFORMS', match: '理论深度/算法贡献', link: 'https://pubsonline.informs.org/journal/opre', note: 'INFORMS 旗舰，理论要求高', cas: '2区', jcr: 'Q1', tier: 'A' },
   { abbr: 'INFORMS JoC', name: 'INFORMS Journal on Computing', field: '运筹/计算', tag: '顶刊', publisher: 'INFORMS', match: '元启发式/进化算法/学习+优化', link: 'https://pubsonline.informs.org/journal/ijoc', note: '算法与计算实验导向，适合智能调度算法', cas: '2区', jcr: 'Q1', ccf: 'B', tier: 'A' },
   { abbr: 'C&OR', name: 'Computers & Operations Research', field: '运筹/计算', tag: '主流', publisher: 'Elsevier', match: '调度算法/组合优化应用', link: 'https://www.editorialmanager.com/caor/', note: '应用型算法文友好', cas: '2区', jcr: 'Q1', tier: 'B' },
@@ -313,6 +313,7 @@ class SidePanelView extends ItemView {
       if (!row.children.length) row.appendChild(badge('已收录', 'mid'));
     };
     jInput.oninput = () => { if (deb) clearTimeout(deb); deb = setTimeout(runQ, 250); };
+    jInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); if (deb) clearTimeout(deb); runQ(); } };
 
     /* ── 快速记想法 ── */
     const cCard = root.createEl('section', { cls: 'jrs-card' });
@@ -1233,9 +1234,9 @@ class DashboardView extends ItemView {
   renderQueue(page) {
     const papers = this.plugin.getPapers();
     const groups = [
-      { title: '高优先级', hint: '优先啃下硬骨头', items: papers.filter((p) => p.priority === '高' && p.status !== '已归档') },
-      { title: '阅读中', hint: '正在进行', items: papers.filter((p) => p.status === '阅读中') },
-      { title: '待读', hint: '按优先级排队', items: papers.filter((p) => p.status === '待读').sort((a, b) => (PRIORITIES.indexOf(a.priority || '低') - PRIORITIES.indexOf(b.priority || '低')) || b.added - a.added).slice(0, 15) },
+      { title: '进行中', hint: '正在阅读的文献', items: papers.filter((p) => p.status === '阅读中') },
+      { title: '高优先待读', hint: '先啃硬骨头', items: papers.filter((p) => p.priority === '高' && p.status === '待读') },
+      { title: '排队待读', hint: '按优先级与时间排序', items: papers.filter((p) => p.status === '待读' && p.priority !== '高').sort((a, b) => (PRIORITIES.indexOf(a.priority || '低') - PRIORITIES.indexOf(b.priority || '低')) || b.added - a.added).slice(0, 15) },
     ];
     groups.forEach((g) => {
       const panel = page.createEl('section', { cls: 'jrs-card' });
@@ -1296,12 +1297,16 @@ class DashboardView extends ItemView {
     const desc = intro.createEl('div', { cls: 'od-hint' });
     desc.textContent = '生成 Obsidian Canvas：主题节点居中、论文节点按方向环绕，连线表示归属关系。可在画布中自由拖拽编辑。';
     const acts = intro.createEl('div', { cls: 'jrs-row-actions' });
-    const gen = acts.createEl('button', { cls: 'od-btn od-btn--primary', text: '重建并打开图谱' });
-    gen.onclick = async () => { await this.plugin.generateGraphCanvas(true); this.render(); };
     const exists = !!this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
     if (exists) {
-      const open = acts.createEl('button', { cls: 'od-btn', text: '打开已有图谱' });
+      const open = acts.createEl('button', { cls: 'od-btn od-btn--primary', text: '打开图谱' });
       open.onclick = () => this.plugin.openGraphCanvas();
+      const gen = acts.createEl('button', { cls: 'od-btn', text: '重建图谱' });
+      gen.title = '按当前文献库重建（顶部「重建图谱」同效）';
+      gen.onclick = async () => { await this.plugin.generateGraphCanvas(true); this.render(); };
+    } else {
+      const gen = acts.createEl('button', { cls: 'od-btn od-btn--primary', text: '生成图谱' });
+      gen.onclick = async () => { await this.plugin.generateGraphCanvas(true); this.render(); };
     }
     /* 主题统计卡 */
     const grid = page.createEl('div', { cls: 'jrs-topic-grid' });
@@ -1330,6 +1335,10 @@ class DashboardView extends ItemView {
     } else {
       const sections = await this.plugin.getSurveyProgress();
       const all = sections.reduce((a, s) => ({ d: a.d + s.done, t: a.t + s.total }), { d: 0, t: 0 });
+      if (all.d === 0) {
+        const cta = surveyCard.createEl('div', { cls: 'jrs-zero-cta' });
+        cta.createSpan({ text: '还没有任何勾选——打开大纲勾掉第一项，或点任意章节的 ✨ 直接让 AI 起草初稿' });
+      }
       const total = surveyCard.createEl('div', { cls: 'jrs-progress' });
       total.createEl('div', { cls: 'od-progressbar' }).createEl('div', { cls: 'od-progressbar-fill' }).style.width = `${all.t ? (all.d / all.t) * 100 : 0}%`;
       total.createEl('span', { cls: 'od-hint', text: `总体 ${all.d}/${all.t}` });
@@ -1445,6 +1454,7 @@ class DashboardView extends ItemView {
       if (r.warn) badges.appendChild(badge(`⚠️ 预警：${r.warn}`, 'top', '2025 国际期刊预警名单'));
     };
     qInput.oninput = () => { if (deb) clearTimeout(deb); deb = setTimeout(runQ, 250); };
+    qInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); if (deb) clearTimeout(deb); runQ(); } };
     this.plugin.loadJournalCache(true).then(() => { if (this.plugin._jcache && qInput.value) runQ(); });
 
     /* 我的投稿管线 */
@@ -1573,13 +1583,16 @@ class DashboardView extends ItemView {
       items.slice(0, 8).forEach(renderAnswer);
     };
 
+    let asking = false;
     const ask = async () => {
+      if (asking) return;
       const q = input.value.trim();
       if (!q) {
         new Notice('请输入问题，例如：网格热力图如何驱动多星调度决策？');
         input.focus();
         return;
       }
+      asking = true;
       btn.disabled = true;
       busy.textContent = '正在检索文献库并生成回答…';
       try {
@@ -1592,11 +1605,22 @@ class DashboardView extends ItemView {
         busy.textContent = `❌ ${e.message}`;
         new Notice(`问答失败：${e.message}`);
       }
+      asking = false;
       btn.disabled = false;
     };
     btn.onclick = ask;
-    input.onkeydown = (e) => { if (e.key === 'Enter') ask(); };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ask(); } };
 
+    /* 空态：示例问题 chips（点击即填入提问） */
+    if (!document.querySelector('.jrs-ask-item')) {
+      const sug = card.createEl('div', { cls: 'jrs-ask-suggest' });
+      sug.createEl('div', { cls: 'od-hint', text: '试试这些问题：' });
+      const chips = sug.createEl('div', { cls: 'od-chips' });
+      ['网格热力图如何驱动多星调度决策？', '元启发式算法在卫星调度中怎么用？', '敏捷卫星与常规成像卫星的调度差异？'].forEach((q) => {
+        const c = chips.createEl('span', { cls: 'od-chip', text: q });
+        c.onclick = () => { input.value = q; input.focus(); };
+      });
+    }
     await refreshList();
   }
 
@@ -1753,7 +1777,9 @@ class LibraryPanel {
     };
     const pr = foot.createEl('span', { cls: 'od-status jrs-prio' });
     pr.setAttribute('data-prio', p.priority || '');
-    pr.textContent = p.priority ? `优 ${p.priority}` : '优 ·';
+    pr.textContent = p.priority || '';
+    pr.title = '优先级（点击切换 高→中→低→无）';
+    if (!p.priority) pr.style.display = 'none';
     pr.onclick = async (e) => {
       e.stopPropagation();
       const order = [...PRIORITIES, ''];
@@ -1883,10 +1909,16 @@ class AddPaperModal extends Modal {
     new Setting(contentEl)
       .addButton((b) => b.setButtonText('创建文献笔记').setCta().onClick(async () => {
         if (!this.data.title.trim()) { new Notice('标题不能为空'); return; }
-        await this.plugin.createPaperNote(this.data);
-        new Notice(`已添加：${this.data.title.slice(0, 24)}…`);
-        this.close();
-        if (this.onDone) this.onDone();
+        b.setDisabled(true);
+        try {
+          await this.plugin.createPaperNote(this.data);
+          new Notice(`已添加：${this.data.title.slice(0, 24)}…`);
+          this.close();
+          if (this.onDone) this.onDone();
+        } catch (e) {
+          new Notice(`创建失败：${e.message}`);
+          b.setDisabled(false);
+        }
       }))
       .addButton((b) => b.setButtonText('取消').onClick(() => this.close()));
   }
@@ -2502,7 +2534,27 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     this.settings.hiddenCards = this.settings.hiddenCards.filter((x) => x !== 'omnibox-tip');
   }
 
-  async saveSettings() { await this.saveData(this.settings); }
+  async saveSettings() {
+    this.normalizeSettingPaths();
+    await this.saveData(this.settings);
+  }
+
+  /** 库内路径字段统一清洗：反斜杠→正斜杠、去尾斜杠、非法字符拦截 */
+  normalizeSettingPaths() {
+    const keys = ['libFolder', 'pdfFolder', 'questionsFolder', 'submissionsFolder', 'inboxFolder', 'basesFolder', 'dailyFolder'];
+    let warned = false;
+    for (const k of keys) {
+      const v = this.settings[k];
+      if (typeof v !== 'string' || !v.trim()) continue;
+      let nv = v.replace(/\\/g, '/').replace(/\/+$/, '').trim();
+      if (/[:*?"<>|]/.test(nv)) {
+        nv = nv.replace(/[:*?"<>|]/g, ' ');
+        warned = true;
+      }
+      if (nv !== v) this.settings[k] = nv;
+    }
+    if (warned) new Notice('路径含非法字符（: * ? " < > |），已自动清理');
+  }
 
   applyAppearance() {
     const s = this.settings;
@@ -2607,7 +2659,13 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     let f = this.findDailyNote(key);
     if (!f) {
       const k = key || todayKey();
-      f = await this.app.vault.create(this.dailyPath(key), `# ${k}\n\n## 今日待办\n\n## 专注记录\n`);
+      try {
+        if (this.settings.dailyFolder) await this.ensureFolder(this.settings.dailyFolder);
+        f = await this.app.vault.create(this.dailyPath(key), `# ${k}\n\n## 今日待办\n\n## 专注记录\n`);
+      } catch (e) {
+        new Notice(`日记创建失败：${e.message}（检查设置中的日记目录）`);
+        return;
+      }
     }
     await this.smartOpenFile(f);
   }
@@ -2807,7 +2865,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     } else new Notice('PDF 不在库内：可用「PDF 入库」迁移后分栏阅读');
   }
 
-  openPdf(pdf) {
+  async openPdf(pdf) {
     if (!pdf) return;
     if (isHttp(pdf)) { window.open(pdf); return; }
     const f = this.app.vault.getAbstractFileByPath(normalizePath(toPosix(pdf)));
@@ -2815,7 +2873,11 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (isExternalPath(pdf)) {
       try {
         const electron = window.require && window.require('electron');
-        if (electron?.shell?.openPath) { electron.shell.openPath(pdf); return; }
+        if (electron?.shell?.openPath) {
+          const err = await electron.shell.openPath(pdf);
+          if (err) new Notice(`打开失败：${err}`);
+          return;
+        }
       } catch (e) { /* fallthrough */ }
       try { if (this.app.openWithDefaultApp) { this.app.openWithDefaultApp(pdf); return; } } catch (e) { /* fallthrough */ }
       navigator.clipboard?.writeText(pdf);
@@ -2977,6 +3039,11 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       if (leaf?.view instanceof DashboardView && leaf.view.section === 'home') leaf.view.softRefresh('arxiv');
     }
     return result;
+  }
+
+  /** 作者串归一：'Caldeiras , Paulo' → 'Paulo Caldeiras' 类脏空格清理 */
+  static normalizeAuthors(s) {
+    return String(s || '').replace(/\s*,\s*/g, ', ').replace(/,([^ ])/g, ', $1').trim();
   }
 
   async arxivToLibrary(it) {
@@ -3311,20 +3378,25 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   }
 
   /** 期刊 → {abbr, cas, jcr}（基于 cas/jcr 字段，参考值） */
+  /** 分词：切出全词集合（比较 abbr 用），如 'operations research letters' → words */
+  static venueWords(v) {
+    return new Set(String(v).toLowerCase().split(/[^a-z0-9\u4e00-\u9fff+&.-]+/).filter(Boolean));
+  }
+
   zoneOf(venue) {
     if (!venue) return null;
     const v = String(venue).toLowerCase().trim();
+    const words = JensenResearchStationPlugin.venueWords(v);
+    /* 目标刊：全称精确 或 缩写整词命中（杜绝 'xxejorxx' / 'or' 误配） */
     const j = JOURNALS.find((x) =>
-      v === x.abbr.toLowerCase() || v === x.name.toLowerCase()
-      || (x.abbr.length > 3 && v.includes(x.abbr.toLowerCase()))
-      || (x.name.length > 8 && v.includes(x.name.toLowerCase())));
+      v === x.abbr.toLowerCase() || v === x.name.toLowerCase() || words.has(x.abbr.toLowerCase()));
     if (j) return { abbr: j.abbr, cas: j.cas, jcr: j.jcr, ccf: j.ccf, tier: j.tier };
-    /* 内置库兜底：CCF / 科协（同步查询） */
+    /* 内置库兜底：CCF / 科协（精确名匹配） */
     const ccfHit = JOURNAL_BUILTIN.ccf.find((x) => x[0].toLowerCase() === v || (x[1] && x[1].toLowerCase() === v));
     if (ccfHit) return { abbr: '', cas: '', jcr: '', ccf: ccfHit[2], tier: '' };
     for (const [k, gv] of Object.entries(JOURNAL_BUILTIN.ops)) { if (k.toLowerCase() === v) return { abbr: '', cas: '', jcr: '', ccf: '', tier: gv }; }
     for (const [k, gv] of Object.entries(JOURNAL_BUILTIN.aero)) { if (k.toLowerCase() === v) return { abbr: '', cas: '', jcr: '', ccf: '', tier: gv }; }
-    /* 已下载的中科院缓存（同步读内存缓存） */
+    /* 已下载的中科院缓存（精确键） */
     if (this._jcache?.cas?.[v]) return { abbr: '', cas: this._jcache.cas[v][0], jcr: '', ccf: '', tier: '', top: this._jcache.cas[v][1] };
     if (this._jcache?.xr?.[v]) return { abbr: '', cas: '', jcr: '', ccf: '', tier: '', xr: this._jcache.xr[v] };
     return null;
@@ -3416,7 +3488,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (!name) return { found: false };
     const out = { found: false, query: nameRaw };
     /* 目标刊 17 本 */
-    const j = JOURNALS.find((x) => name === x.abbr.toLowerCase() || name === x.name.toLowerCase() || (x.name.length > 8 && name.includes(x.name.toLowerCase())));
+    const w1 = JensenResearchStationPlugin.venueWords(nameRaw);
+    const j = JOURNALS.find((x) => name === x.abbr.toLowerCase() || name === x.name.toLowerCase() || w1.has(x.abbr.toLowerCase()));
     if (j) {
       out.found = true;
       if (j.cas) out.cas = j.cas;
@@ -3426,7 +3499,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       out.target = true;
     }
     /* CCF 2026（含会议） */
-    const ccfHit = JOURNAL_BUILTIN.ccf.find((x) => x[0].toLowerCase() === name || (x[1] && x[1].toLowerCase() === name) || (x[0].length > 8 && name.includes(x[0].toLowerCase())));
+    const ccfHit = JOURNAL_BUILTIN.ccf.find((x) => x[0].toLowerCase() === name || (x[1] && x[1].toLowerCase() === name) || (x[0].toLowerCase().length > 8 && w1.has(...x[0].toLowerCase().split(/\s+/).slice(0, 1)) && w1.has(...x[0].toLowerCase().split(/\s+/).slice(-1))));
     if (ccfHit) {
       out.found = true;
       out.ccf = { grade: ccfHit[2], type: ccfHit[3] === 'conf' ? '会议' : '期刊', field: ccfHit[4] };
@@ -3466,9 +3539,8 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     if (!(f instanceof TFile)) {
       f = await this.app.vault.create(path, `# AI 问答 ${todayKey()}\n\n`);
     }
-    const srcLine = item.sources?.length
-      ? `\n\n来源：${item.sources.map((s) => `[[${s.file.basename}]]`).join('、')}` : '';
-    await this.app.vault.append(f, `\n### Q: ${item.q}\n\n${item.a.trim()}${srcLine}\n`);
+    const safeA = item.a.trim().replace(/^### /gm, '#### ');
+    await this.app.vault.append(f, `\n### Q: ${item.q}\n\n${safeA}${srcLine}\n`);
   }
 
   async getAskLogToday() {
@@ -3636,7 +3708,9 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   async generateGraphCanvas(open) {
     const papers = this.getPapers();
+    if (!papers.length) { new Notice('文献库为空，已阻止重建（避免清空现有图谱）'); return; }
     const topics = this.settings.topics.filter((t) => papers.some((p) => p.topics.includes(t)));
+    const untagged = papers.filter((p) => !p.topics.some((t) => topics.includes(t)));
     const nodes = []; const edges = [];
     /* 主题节点：横向一排居中 */
     const T_W = 260; const T_H = 60; const T_GAP = 60;
@@ -3647,6 +3721,10 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         x: -rowW / 2 + i * (T_W + T_GAP), y: -520, width: T_W, height: T_H, color: '3',
       });
     });
+    /* 未分类虚拟节点 */
+    if (untagged.length) {
+      nodes.push({ id: 'topic-uncategorized', type: 'text', text: '## 未标注方向', x: -rowW / 2 - 340, y: -520, width: T_W, height: T_H, color: '4' });
+    }
     /* 论文节点：按主题列向下堆叠 */
     const P_W = 280; const P_H = 80; const P_GAP = 26;
     topics.forEach((t, ti) => {
@@ -3663,12 +3741,23 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         edges.push({ id: `e-${nid}`, fromNode: `topic-${ti}`, fromSide: 'bottom', toNode: nid, toSide: 'top', color: '1' });
       });
     });
+    /* 未分类论文节点 */
+    untagged.forEach((p, pi) => {
+      const nid = `paper-unc-${pi}`;
+      nodes.push({
+        id: nid, type: 'text',
+        text: `[[${p.file.basename}|${p.title.length > 40 ? p.title.slice(0, 40) + '…' : p.title}]]\n${p.status}${p.year ? ' · ' + p.year : ''}`,
+        x: -rowW / 2 - 350, y: -420 + pi * (P_H + P_GAP), width: P_W, height: P_H, color: '0',
+      });
+      edges.push({ id: `e-${nid}`, fromNode: 'topic-uncategorized', fromSide: 'bottom', toNode: nid, toSide: 'top', color: '4' });
+    });
+    if (!nodes.length) { new Notice('图谱无内容，已取消写入'); return; }
     const canvas = { nodes, edges, fmtMd: true };
     const path = this.settings.graphCanvas;
     const old = this.app.vault.getAbstractFileByPath(path);
     if (old instanceof TFile) await this.app.vault.modify(old, JSON.stringify(canvas, null, 1));
     else { await this.ensureFolder(path.split('/').slice(0, -1).join('/')); await this.app.vault.create(path, JSON.stringify(canvas, null, 1)); }
-    new Notice(`图谱已生成：${topics.length} 主题 · ${papers.length} 论文`);
+    new Notice(`图谱已生成：${topics.length} 主题 · 入图 ${papers.length - untagged.length} 篇（未标注 ${untagged.length} 篇归入"未标注方向"）`);
     if (open) await this.openGraphCanvas();
   }
 
@@ -3751,15 +3840,16 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
   async generateMatrix() {
     const papers = this.getPapersSorted('year');
     if (!papers.length) { new Notice('文献库为空'); return; }
+    const mdCell = (v) => String(v == null ? '' : v).replace(/\|/g, '\\|');
     const rows = [
       '| 文献 | 年份 | 来源 | 分区 | 方向 | 状态 | 优先级 | 评分 | 问题设定 | 网格作用 | 求解算法 |',
       '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ];
     for (const p of papers) {
-      const t = p.title.replace(/\|/g, '\\|');
+      const t = mdCell(p.title);
       const link = `[[${p.file.basename}|${t.length > 34 ? t.slice(0, 34) + '…' : t}]]`;
       const zone = this.zoneOf(p.venue);
-      rows.push(`| ${link} | ${p.year || '—'} | ${p.venue || '—'} | ${zone ? zone.abbr + ' ' + zone.cas : '—'} | ${p.topics.join('、') || '—'} | ${p.status} | ${p.priority || '—'} | ${'★'.repeat(p.rating) || '—'} |  |  |  |`);
+      rows.push(`| ${link} | ${mdCell(p.year || '—')} | ${mdCell(p.venue || '—')} | ${zone ? mdCell(zone.abbr + ' ' + zone.cas) : '—'} | ${mdCell(p.topics.join('、') || '—')} | ${mdCell(p.status)} | ${mdCell(p.priority || '—')} | ${mdCell('★'.repeat(p.rating) || '—')} |  |  |  |`);
     }
     const dir = this.settings.surveyNote.split('/').slice(0, -1).join('/');
     const matrixPath = `${dir ? dir + '/' : ''}文献矩阵.md`;
