@@ -270,7 +270,22 @@ class SidePanelView extends ItemView {
     const ph = pomoCard.createEl('div', { cls: 'od-card-title' });
     setIcon(ph, 'timer');
     ph.createSpan({ text: '番茄钟' });
-    this._miniClock = pomoCard.createEl('div', { cls: 'jrs-side-clock' });
+    /* mini ring：与主页同源可视化 */
+    const ringBox = pomoCard.createEl('div', { cls: 'jrs-side-ring' });
+    const C = 2 * Math.PI * 40;
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 96 96');
+    const mk = (cls) => { const c = document.createElementNS(svgNS, 'circle'); c.setAttribute('class', cls); c.setAttribute('cx','48'); c.setAttribute('cy','48'); c.setAttribute('r','40'); return c; };
+    const track = mk('od-pomo-track');
+    this._miniBar = mk('od-pomo-bar');
+    this._miniBar.setAttribute('stroke-dasharray', String(C));
+    this._miniBar.setAttribute('stroke-dashoffset', '0');
+    this._miniBar.setAttribute('stroke-width', '6');
+    track.setAttribute('stroke-width', '6');
+    svg.appendChild(track); svg.appendChild(this._miniBar);
+    ringBox.appendChild(svg);
+    this._miniClock = ringBox.createEl('div', { cls: 'jrs-side-clock' });
     this._miniPhase = pomoCard.createEl('div', { cls: 'od-hint' });
     const pc = pomoCard.createEl('div', { cls: 'jrs-side-pomo-btns' });
     this._miniStart = pc.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm' });
@@ -343,6 +358,11 @@ class SidePanelView extends ItemView {
     this._miniClock.textContent = p.phase === 'idle'
       ? `${String(this.plugin.settings.pomoWork).padStart(2, '0')}:00`
       : p.clockText();
+    if (this._miniBar) {
+      const C = 2 * Math.PI * 40;
+      this._miniBar.setAttribute('stroke-dashoffset', String(C * p.progress));
+      this._miniBar.toggleClass('od-pomo-bar--break', p.phase === 'break' || p.phase === 'longbreak');
+    }
     this._miniPhase.textContent = `${p.phaseText()} · 今日 ${p.completedToday} 个 / ${this.plugin.todayPomoMinutes()} 分钟`;
     this._miniStart.textContent = p.phase === 'idle' ? '开始专注' : '停止';
   }
@@ -1678,9 +1698,13 @@ class DashboardView extends ItemView {
     const papers = this.plugin.getPapers().filter((p) => p.status === '阅读中' || p.status === '待读');
     const intro = page.createEl('section', { cls: 'jrs-card' });
     const head = intro.createEl('div', { cls: 'jrs-section-heading' });
-    head.createEl('h2', { text: '选择一篇论文开始精读' });
-    head.createSpan({ text: '点击标题 → 笔记 + PDF 分栏打开；AI 按钮生成摘要 / 导读十问' });
-    if (!papers.length) { intro.createEl('div', { cls: 'od-task-empty', text: '文献库为空或都已读完，去「AI 发现」找新论文' }); return; }
+    if (!papers.length) {
+      head.createEl('h2', { text: '选择一篇论文开始精读' });
+      intro.createEl('div', { cls: 'od-task-empty', text: '文献库为空或都已读完，去「AI 发现」找新论文' });
+      return;
+    }
+    head.createEl('h2', { text: '继续精读' });
+    head.createSpan({ text: `进行中 ${papers.filter((p) => p.status === '阅读中').length} 篇 · 共 ${papers.length} 篇可选` });
     papers.slice(0, 30).forEach((p) => {
       const row = page.createEl('article', { cls: 'jrs-card jrs-paper-row' });
       const main = row.createEl('div', { cls: 'jrs-row-main' });

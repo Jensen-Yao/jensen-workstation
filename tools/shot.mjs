@@ -34,6 +34,10 @@ if (extra) {
   await sleep(1000);
 }
 
+
+// 截图前关闭所有弹窗/浮层/命令面板
+await send('Runtime.evaluate', { expression: "(function(){ document.querySelectorAll('.modal-container, .menu, .suggestion-container, .prompt').forEach(el => el.remove()); document.querySelectorAll('.modal-bg').forEach(el => el.click()); })()", awaitPromise: false });
+await new Promise(r => setTimeout(r, 200));
 const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: 72 });
 if (shot.result?.data) {
   const { writeFileSync } = await import('node:fs');
