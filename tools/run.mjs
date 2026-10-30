@@ -4,7 +4,7 @@ const base = 'http://127.0.0.1:9223';
 const { readFileSync } = await import('node:fs');
 const code = readFileSync(process.argv[2], 'utf8');
 const list = await (await fetch(base + '/json')).json();
-const page = list.find((t) => t.type === 'page' && /obsidian/i.test(t.url));
+const page = list.find((t) => t.type === 'page' && t.url.includes('index.html')) || list.find((t) => t.type === 'page' && /obsidian/i.test(t.url));
 const ws = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 let id = 0;

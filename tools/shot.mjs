@@ -6,7 +6,7 @@ const extra = process.argv[3] || '';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const list = await (await fetch(base + '/json')).json();
-const page = list.find((t) => t.type === 'page' && /obsidian/i.test(t.url)) || list.find((t) => t.type === 'page');
+const page = list.find((t) => t.type === 'page' && t.url.includes('index.html')) || list.find((t) => t.type === 'page' && /obsidian/i.test(t.url));
 if (!page) { console.error('未找到 Obsidian 页面目标', list.map((t) => t.type + ':' + t.url)); process.exit(1); }
 
 const ws = new WebSocket(page.webSocketDebuggerUrl);

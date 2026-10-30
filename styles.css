@@ -1397,6 +1397,63 @@ body.jrs-bg-on .jrs-view > * {
 }
 
 /* ---------- Hero 页头（顶部留白 + 大标题） ---------- */
+/* 居中版 Hero（v0.10.1） */
+.jrs-hero.jrs-hero-center {
+  padding: 34px 20px 16px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.jrs-hero-center .jrs-hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.jrs-hero-center .jrs-hero-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: var(--od-accent-soft);
+  color: var(--od-accent);
+}
+
+.jrs-hero-center .jrs-hero-logo svg { width: 21px; height: 21px; }
+
+.jrs-hero-center .jrs-hero-name {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-normal);
+}
+
+.jrs-hero-center .jrs-hero-sub {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.jrs-hero-center .jrs-hero-omni {
+  width: min(640px, 92%);
+  margin-top: 4px;
+}
+
+.jrs-hero-center .jrs-hero-actions {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 旧 hero 布局（非居中场景保留） */
 .jrs-hero {
   padding: 30px 6px 14px;
   margin-bottom: 4px;
@@ -1629,7 +1686,7 @@ body.jrs-bg-on .od-paper-meta {
 
 /* ---------- 左侧栏 ---------- */
 .jrs-sidebar {
-  width: 208px;
+  width: 190px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1637,8 +1694,8 @@ body.jrs-bg-on .od-paper-meta {
   background: color-mix(in srgb, var(--background-secondary) var(--od-card-alpha, 92%), transparent);
   backdrop-filter: blur(var(--od-blur, 18px)) saturate(150%);
   -webkit-backdrop-filter: blur(var(--od-blur, 18px)) saturate(150%);
-  padding: 14px 10px;
-  gap: 10px;
+  padding: 8px 7px;
+  gap: 5px;
   z-index: 2;
 }
 
@@ -1647,8 +1704,8 @@ body.jrs-bg-on .od-paper-meta {
 .jrs-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px 12px;
+  gap: 8px;
+  padding: 2px 4px 7px;
   border-bottom: 1px dashed var(--background-modifier-border);
 }
 
@@ -1658,22 +1715,22 @@ body.jrs-bg-on .od-paper-meta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
   background: var(--od-accent);
   color: var(--od-accent-text);
   flex-shrink: 0;
 }
 
-.jrs-brand-mark svg { width: 18px; height: 18px; }
+.jrs-brand-mark svg { width: 14px; height: 14px; }
 
 .jrs-brand-name {
-  font-size: 14.5px;
+  font-size: 12.5px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-normal);
-  line-height: 1.2;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
@@ -1694,13 +1751,13 @@ body.jrs-bg-on .od-paper-meta {
 .jrs-nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 5px 8px;
   border-radius: var(--od-radius-m);
   border: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12.5px;
   cursor: pointer;
   text-align: left;
   width: 100%;
@@ -1719,15 +1776,15 @@ body.jrs-bg-on .od-paper-meta {
 }
 
 .jrs-nav-icon { display: inline-flex; flex-shrink: 0; }
-.jrs-nav-icon svg { width: 16px; height: 16px; }
+.jrs-nav-icon svg { width: 14px; height: 14px; }
 .jrs-nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .jrs-sidebar-bottom {
   border-top: 1px dashed var(--background-modifier-border);
-  padding-top: 10px;
+  padding-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .jrs-meta-label { font-size: 10px; color: var(--text-faint); letter-spacing: 0.05em; }
@@ -2175,3 +2232,9 @@ body.jrs-bg-on .jrs-section-heading h2 {
 .jrs-zone-badge[data-zone="top"] { color: var(--od-danger); background: color-mix(in srgb, var(--od-danger) 10%, transparent); }
 .jrs-zone-badge[data-zone="mid"] { color: var(--od-accent); background: var(--od-accent-soft); }
 .jrs-zone-badge[data-zone="cn"] { color: var(--od-warn); background: color-mix(in srgb, var(--od-warn) 10%, transparent); }
+
+/* ---------- 期刊速查器 ---------- */
+.jrs-lookup-out { min-height: 8px; }
+.jrs-lookup-result { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0 2px; }
+.jrs-lookup-name { font-size: 14px; font-weight: 700; color: var(--text-normal); max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jrs-lookup-result .jrs-zone-badge { font-size: 11.5px; padding: 2px 10px; }
