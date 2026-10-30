@@ -958,7 +958,7 @@ class DashboardView extends ItemView {
     const btn = inputRow.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '添加' });
     const submit = async () => {
       const v = input.value.trim();
-      if (!v) return;
+      if (!v) { new Notice('请输入待办内容'); input.focus(); return; }
       await this.plugin.appendDailyTask(v);
       this.softRefresh('tasks');
     };
