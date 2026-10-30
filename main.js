@@ -69,9 +69,9 @@ const JOURNALS = [
   { abbr: 'IEEE TAES', name: 'IEEE Trans. Aerospace and Electronic Systems', field: '航空电子', tag: '顶刊', publisher: 'IEEE', match: '调度系统/探测系统', link: 'https://ieee.atyponrex.com/journal/taes', note: '电子系统+任务规划结合', cas: '2区', jcr: 'Q1', tier: 'T1' },
   { abbr: 'IEEE TSMC', name: 'IEEE Trans. Systems, Man, and Cybernetics: Systems', field: '系统工程', tag: '顶刊', publisher: 'IEEE', match: '智能调度系统', link: 'https://ieeexplore.ieee.org/xpl/RecentIssue.jsp?punumber=6221021', note: '系统智能方法', cas: '1区', jcr: 'Q1', tier: 'B' },
   { abbr: 'JAIS', name: 'Journal of Aerospace Information Systems', field: '航天信息', tag: '主流', publisher: 'AIAA', match: '规划信息系统', link: 'https://arc.aiaa.org/journal/jais', note: 'AIAA 信息系系统方向', cas: '3区', jcr: 'Q2', tier: 'T3' },
-  { abbr: '宇航学报', name: '宇航学报', field: '航天(中文)', tag: 'EI/中文核心', publisher: '中国宇航学会', match: '卫星任务规划主阵地', link: '', note: '国内卫星规划领域核心发表阵地', cas: 'EI', jcr: '', tier: 'T1' },
-  { abbr: '航空学报', name: '航空学报', field: '航空(中文)', tag: 'EI/中文核心', publisher: '中国航空学会', match: '飞行器/任务系统', link: '', note: '国内航空领域旗舰', cas: 'EI', jcr: '', tier: 'T1' },
-  { abbr: '系统工程与电子技术', name: '系统工程与电子技术', field: '系统工程(中文)', tag: 'EI/中文核心', publisher: '中国航天科工', match: '调度/优化应用', link: '', note: '系统工程应用，周期较快', cas: 'EI', jcr: '', tier: 'T2' },
+  { abbr: '宇航学报', name: '宇航学报', field: '航天（中文）', tag: 'EI/中文核心', publisher: '中国宇航学会', match: '卫星任务规划主阵地', link: '', note: '国内卫星规划领域核心发表阵地', cas: 'EI', jcr: '', tier: 'T1' },
+  { abbr: '航空学报', name: '航空学报', field: '航空（中文）', tag: 'EI/中文核心', publisher: '中国航空学会', match: '飞行器/任务系统', link: '', note: '国内航空领域旗舰', cas: 'EI', jcr: '', tier: 'T1' },
+  { abbr: '系统工程与电子技术', name: '系统工程与电子技术', field: '系统工程（中文）', tag: 'EI/中文核心', publisher: '中国航天科工', match: '调度/优化应用', link: '', note: '系统工程应用，周期较快', cas: 'EI', jcr: '', tier: 'T2' },
   { abbr: 'TEVC', name: 'IEEE Transactions on Evolutionary Computation', field: '进化计算', tag: '顶刊', publisher: 'IEEE', match: '进化算法/调度应用', link: 'https://ieee.atyponrex.com/journal/tevc', note: '进化算法方向首选，CCF-B · 科协B', cas: '1区', jcr: 'Q1', ccf: 'B', tier: 'B' },
   { abbr: 'J.Sched', name: 'Journal of Scheduling', field: '调度', tag: '主流', publisher: 'Wiley', match: '调度理论/卫星调度应用', link: 'https://onlinelibrary.wiley.com/journal/10999143', note: '调度专题刊，科协B · 运筹与管理', cas: '3区', jcr: 'Q2', tier: 'B' },
 ];
@@ -335,7 +335,7 @@ class SidePanelView extends ItemView {
     const ch = cCard.createEl('div', { cls: 'od-card-title' });
     setIcon(ch, 'inbox');
     ch.createSpan({ text: '快速记想法' });
-    const cInput = cCard.createEl('textarea', { cls: 'jrs-side-input', attr: { rows: '3', placeholder: '想到什么记什么，落入今日收件箱…' } });
+    const cInput = cCard.createEl('textarea', { cls: 'jrs-side-input', attr: { rows: '3', placeholder: '记个想法…' } });
     cInput.style.resize = 'vertical';
     const cBtn = cCard.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '存入收件箱' });
     const cHint = cCard.createEl('div', { cls: 'od-hint' });
@@ -345,7 +345,7 @@ class SidePanelView extends ItemView {
       await this.plugin.captureThought(v);
       cInput.value = '';
       cHint.textContent = `${window.moment().format('HH:mm')} 已存`;
-      new Notice('已存入今日收件箱 ');
+      new Notice('已存入今日收件箱');
     };
     const inbox = this.plugin.findDailyNote ? null : null;
     const openInbox = cCard.createEl('button', { cls: 'od-btn od-btn--sm od-btn--ghost', text: '查看收件箱' });
@@ -515,7 +515,7 @@ class DashboardView extends ItemView {
   buildOmnibox(host) {
     const box = host.createEl('div', { cls: 'od-search jrs-omnibox-box' });
     setIcon(box.createSpan(), 'search');
-    const input = box.createEl('input', { type: 'text', placeholder: '搜索笔记 / 文献 / 命令…' });
+    const input = box.createEl('input', { type: 'text', placeholder: '搜索…' });
     box.createEl('span', { cls: 'jrs-omni-kbd', text: '↵' });
     const panel = host.createEl('div', { cls: 'jrs-omnibox-panel' });
     let active = -1; let items = [];
@@ -622,7 +622,7 @@ class DashboardView extends ItemView {
   cardDef(id) {
     const b = BUILTIN_CARDS.find((c) => c.id === id);
     if (b) return { id, name: b.name, icon: b.icon, size: { ...b.size }, custom: null };
-    const c = this.plugin.settings.customCards.find((x) => `c:${c.uid}` === id);
+    const c = this.plugin.settings.customCards.find((x) => `c:${x.uid}` === id);
     if (c) {
       const t = CUSTOM_TYPES[c.type] || {};
       return { id, name: c.title || t.name || '卡片', icon: t.icon || 'square', size: { w: 2, h: 2 }, custom: c };
@@ -993,7 +993,7 @@ class DashboardView extends ItemView {
       row.onclick = () => this.plugin.openDailyNote();
     });
     const inputRow = body.createEl('div', { cls: 'jrs-task-add' });
-    const input = inputRow.createEl('input', { type: 'text', placeholder: '快速添加待办，回车确认…' });
+    const input = inputRow.createEl('input', { type: 'text', placeholder: '添加待办…' });
     const btn = inputRow.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '添加' });
     const submit = async () => {
       const v = input.value.trim();
@@ -1027,7 +1027,7 @@ class DashboardView extends ItemView {
       main.createEl('div', { cls: 'od-hint', text: `${it.date} · ${it.authors}` });
       const add = row.createEl('button', { cls: 'od-icon-btn', title: '加入文献库' });
       setIcon(add, 'plus');
-      add.onclick = async () => { await this.plugin.arxivToLibrary(it); new Notice('已加入文献库 '); };
+      add.onclick = async () => { await this.plugin.arxivToLibrary(it); new Notice('已加入文献库'); };
     });
     return body;
   }
@@ -1135,7 +1135,7 @@ class DashboardView extends ItemView {
       const item = wrap.createEl('div', { cls: 'od-progress-item od-clickable' });
       item.onclick = () => this.plugin.openReading(p);
       const top = item.createEl('div', { cls: 'od-progress-top' });
-      top.createEl('span', { cls: 'od-progress-name', text: p.title.length > 40 ? p.title.slice(0, 40) + '…' : p.title });
+      top.createEl('span', { cls: 'od-progress-name', text: p.title });
       const st = top.createEl('span', { cls: 'od-status' });
       st.setAttribute('data-status', p.status);
       st.textContent = p.status;
@@ -1144,7 +1144,7 @@ class DashboardView extends ItemView {
   }
 
   async buildCustom(body, id) {
-    const def = this.plugin.settings.customCards.find((c) => `c:${c.uid}` === id);
+    const def = this.plugin.settings.customCards.find((x) => `c:${x.uid}` === id);
     if (!def) return null;
     const cfg = def.cfg || {};
     if (def.type === 'note') {
@@ -1206,7 +1206,7 @@ class DashboardView extends ItemView {
     const input = form.createEl('input', {
       type: 'text',
       placeholder: this._discoverSrc === 'arxiv'
-        ? '如 all:"satellite scheduling" OR all:"earth observation"'
+        ? '关键词…'
         : '如 satellite scheduling grid / 敏捷卫星 调度（英文效果最佳）',
     });
     if (this._discoverSrc === 'arxiv') input.value = this.plugin.settings.arxivQuery;
@@ -1226,7 +1226,7 @@ class DashboardView extends ItemView {
         const zone = this.plugin.zoneOf(it.venue);
         metaLine.textContent = [it.date, it.venue, it.authors].filter(Boolean).join(' · ');
         if (zone) { const zb = this.plugin.zoneBadge(zone); if (zb) main.appendChild(zb); }
-        if (it.summary) main.createEl('div', { cls: 'jrs-row-summary', text: it.summary.slice(0, 160) + '…' });
+        if (it.summary) main.createEl('div', { cls: 'jrs-row-summary', text: it.summary });
         const acts = card.createEl('div', { cls: 'jrs-row-actions' });
         const add = acts.createEl('button', { cls: 'od-btn od-btn--primary od-btn--sm', text: '＋ 入库' });
         add.onclick = async () => {
@@ -1234,7 +1234,7 @@ class DashboardView extends ItemView {
           try {
             if (it.source === 'crossref') await this.plugin.crossrefToLibrary(it);
             else await this.plugin.arxivToLibrary(it);
-            new Notice('已加入文献库 ');
+            new Notice('已加入文献库');
             add.textContent = '已入库';
           } catch (e) { new Notice(`入库失败：${e.message}`); add.disabled = false; }
         };
@@ -1398,7 +1398,7 @@ class DashboardView extends ItemView {
       card.createEl('div', { cls: 'jrs-topic-count', text: `${items.length} 篇` });
       items.slice(0, 3).forEach((p) => {
         const line = card.createEl('div', { cls: 'od-hint' });
-        line.textContent = '· ' + (p.title.length > 28 ? p.title.slice(0, 28) + '…' : p.title);
+        line.textContent = p.title;
         if (p.authorsShort) {
           const au = line.createEl('span', { cls: 'jrs-graph-author' });
           au.textContent = ' — ' + p.authorsShort;
@@ -1498,7 +1498,7 @@ class DashboardView extends ItemView {
     qh.createSpan({ text: cacheNow ? `已加载全量库（中科院2025 ${Object.keys(cacheNow.cas || {}).length} 刊 · 新锐2026 ${Object.keys(cacheNow.xr || {}).length} 刊）` : '内置 CCF2026·科协目录；下载全量库后可查任意期刊的 2025 中科院分区与新锐分区' });
     const dlBtn = qh.createEl('button', { cls: 'od-btn od-btn--sm' });
     setIcon(dlBtn.createSpan(), 'download');
-    dlBtn.createSpan({ text: cacheNow ? '更新全量库' : '下载全量库(约10MB)' });
+    dlBtn.createSpan({ text: cacheNow ? '更新全量库' : '下载全量库（约 10MB）' });
     dlBtn.onclick = async () => {
       dlBtn.disabled = true;
       new Notice('正在下载并解析中科院2025 + 新锐2026…');
@@ -1509,7 +1509,7 @@ class DashboardView extends ItemView {
       } catch (e) { new Notice(`下载失败：${e.message}`); dlBtn.disabled = false; }
     };
     const qRow = qc.createEl('div', { cls: 'jrs-discover-form' });
-    const qInput = qRow.createEl('input', { type: 'text', placeholder: '输入任意期刊/会议名，如 Journal of Scheduling、GECCO、宇航学报…' });
+    const qInput = qRow.createEl('input', { type: 'text', placeholder: '输入期刊/会议名…' });
     const qOut = qc.createEl('div', { cls: 'jrs-lookup-out' });
     let deb = null;
     const badge = (text, cls, title) => {
@@ -1598,7 +1598,7 @@ class DashboardView extends ItemView {
       const openIb = ibh.createEl('button', { cls: 'od-btn od-btn--sm', text: '打开' });
       openIb.onclick = () => this.plugin.openInboxNote();
       inboxItems.slice(0, 5).forEach((txt) => {
-        ib.createEl('div', { cls: 'od-hint', text: '· ' + txt.slice(0, 60) });
+        ib.createEl('div', { cls: 'od-hint', text: txt });
       });
     }
 
@@ -1641,7 +1641,7 @@ class DashboardView extends ItemView {
     head.createSpan({ text: '问答自动存档到 科研工作台/AI问答/，重开不丢' });
 
     const inputRow = card.createEl('div', { cls: 'jrs-ask-input' });
-    const input = inputRow.createEl('input', { type: 'text', placeholder: '如：网格热力图如何驱动多星调度决策？EJOR 论文常用的基线算法有哪些？' });
+    const input = inputRow.createEl('input', { type: 'text', placeholder: '问一个问题…' });
     const btn = inputRow.createEl('button', { cls: 'od-btn od-btn--primary', text: '提问' });
     const busy = card.createEl('div', { cls: 'od-hint' });
 
@@ -1674,7 +1674,7 @@ class DashboardView extends ItemView {
         const names = item.sources.map((s) => (s.file ? s.file.basename : s.basename)).filter(Boolean);
         await this.plugin.createQuestion(item.q, names.join(','));
         await this.plugin.appendAnswerToQuestion(item.q, item.a);
-        new Notice('已沉淀到研究问题 ');
+        new Notice('已沉淀到研究问题');
       };
     };
 
@@ -1789,7 +1789,7 @@ class LibraryPanel {
     const bar = root.createEl('div', { cls: 'od-lib-toolbar' });
     const search = bar.createEl('div', { cls: 'od-search' });
     setIcon(search.createSpan(), 'search');
-    const input = search.createEl('input', { type: 'text', placeholder: '搜索标题 / 作者 / 来源…' });
+    const input = search.createEl('input', { type: 'text', placeholder: '搜索文献…' });
     input.value = this.q;
     input.oninput = () => { this.q = input.value; this.renderList(); };
     const sortSel = bar.createEl('select', { cls: 'od-btn' });
@@ -1972,7 +1972,7 @@ class AddPaperModal extends Modal {
         t.onChange(() => { this.data[key] = t.getValue(); });
       });
     };
-    mkText('标题 *', 'title', '如：基于网格剖分的敏捷卫星区域目标观测调度方法');
+    mkText('标题 *', 'title', '论文标题…');
     mkText('作者', 'authors', '如：伍国华, 祝江汉');
     mkText('年份', 'year', '2024');
     const venueWrap = new Setting(contentEl).setName('期刊 / 会议').setDesc('输入后自动识别 CCF/科协/中科院分区');
@@ -1996,7 +1996,7 @@ class AddPaperModal extends Modal {
       }, 250);
     };
     new Setting(contentEl).setName('PDF 链接或库内路径（可选）').addText((t) => {
-      t.inputEl.placeholder = 'https://arxiv.org/pdf/… 或 科研工作台/PDF/x.pdf';
+      t.inputEl.placeholder = 'PDF 链接或路径…';
       t.onChange(() => { this.data.pdf = t.getValue(); });
     });
     new Setting(contentEl).setName('状态').addDropdown((d) => {
@@ -2300,7 +2300,7 @@ class CaptureModal extends Modal {
       .addButton((b) => b.setButtonText('存入收件箱').setCta().onClick(async () => {
         if (!text.trim()) { new Notice('内容为空'); return; }
         await this.plugin.captureThought(text.trim());
-        new Notice('已存入今日收件箱 ');
+        new Notice('已存入今日收件箱');
         this.close();
       }))
       .addButton((b) => b.setButtonText('取消').onClick(() => this.close()));
@@ -2345,7 +2345,7 @@ class AddSubmissionModal extends Modal {
       .addButton((b) => b.setButtonText('创建').setCta().onClick(async () => {
         if (!title.trim()) { new Notice('标题不能为空'); return; }
         await this.plugin.createSubmission(title.trim(), custom || target, deadline, note.trim());
-        new Notice(`投稿已建档：${(custom || target)} `);
+        new Notice(`投稿已建档：${(custom || target)}`);
         this.close();
         if (this.onDone) this.onDone();
       }))
@@ -2375,7 +2375,7 @@ class AddQuestionModal extends Modal {
       .addButton((b) => b.setButtonText('创建').setCta().onClick(async () => {
         if (!q.trim()) { new Notice('问题描述不能为空'); return; }
         await this.plugin.createQuestion(q.trim(), related);
-        new Notice('研究问题已记录 ');
+        new Notice('研究问题已记录');
         this.close();
         if (this.onDone) this.onDone();
       }))
@@ -3232,7 +3232,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const content = await this.app.vault.cachedRead(paper.file);
     const m = out.match(/## 导读十问[\s\S]*/);
     await this.app.vault.modify(paper.file, replaceSection(content, '导读十问', (m ? m[0] : out).replace(/^## 导读十问\s*\n/, '')));
-    new Notice('导读十问已生成 ');
+    new Notice('导读十问已生成');
     await this.smartOpenFile(paper.file);
   }
 
@@ -3329,7 +3329,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     let text = fs.readFileSync(md, 'utf-8');
     if (text.length > 60000) text = `${text.slice(0, 60000)}\n\n…（过长已截断）`;
     await this.app.vault.modify(paper.file, replaceSection(content, '原文提取（MinerU）', text));
-    new Notice('MinerU 解析已写入 ');
+    new Notice('MinerU 解析已写入');
   }
 
   /* ---------- 研究问题 ---------- */
@@ -3760,7 +3760,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     }
     const content = await this.app.vault.cachedRead(f);
     await this.app.vault.modify(f, replaceSection(content, '今日小结', lines.join('\n')));
-    new Notice('今日小结已写入日记 ');
+    new Notice('今日小结已写入日记');
     await this.smartOpenFile(f);
   }
 
@@ -3981,7 +3981,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     ].join('\n');
     await this.ensureFolder(this.settings.surveyNote.split('/').slice(0, -1).join('/'));
     const f = await this.app.vault.create(this.settings.surveyNote, outline);
-    new Notice('综述大纲已初始化 ');
+    new Notice('综述大纲已初始化');
     if (open) await this.smartOpenFile(f);
   }
 

@@ -1911,7 +1911,7 @@ body.jrs-bg-on .jrs-section-heading h2 {
 
 /* ---------- 论文行（队列/发现/阅读） ---------- */
 .jrs-paper-row {
-  flex-direction: row !important;
+  flex-direction: row;
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
@@ -2402,3 +2402,13 @@ body.jrs-bg-on .jrs-topbar {
 
 /* 主列窄布局降列提示 */
 .jrs-board { min-height: 200px; }
+
+/* ---------- v0.17.1 · R8 排版统一 ---------- */
+/* 标题/摘要统一 CSS clamp（替代 JS slice 预切） */
+.od-progress-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jrs-row-summary { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.jrs-graph-author { white-space: nowrap; }
+.od-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 占位符短版适配 */
+.jrs-omnibox-box input { min-width: 80px; }
