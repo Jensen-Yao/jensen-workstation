@@ -227,7 +227,7 @@ class PomoEngine {
       this.total = (long ? s.pomoLongBreak : s.pomoBreak) * 60;
       this.left = this.total; this._run();
     } else {
-      new Notice(' 休息结束，继续冲刺！');
+      new Notice('休息结束，继续冲刺！');
       this.phase = 'idle'; this.left = 0; this.total = 0;
     }
     this.emit();
@@ -1443,7 +1443,7 @@ class DashboardView extends ItemView {
           new Notice(`正在为「${sec.name}」起草初稿…`);
           try {
             await this.plugin.aiDraftSection(sec.name);
-            new Notice(`「${sec.name}」初稿已写入大纲 sparkles`);
+            new Notice(`「${sec.name}」初稿已写入大纲`);
             this.render();
           } catch (e) {
             new Notice(`起草失败：${e.message}`);
@@ -3218,7 +3218,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       if (m && m[1].trim()) c = replaceSection(c, h, m[1].trim());
     });
     await this.app.vault.modify(paper.file, c);
-    new Notice('AI 摘要已写入 sparkles');
+    new Notice('AI 摘要已写入');
     await this.smartOpenFile(paper.file);
   }
 
