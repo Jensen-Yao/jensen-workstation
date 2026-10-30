@@ -1999,7 +1999,7 @@ body.jrs-bg-on .jrs-section-heading h2 {
 /* ---------- 阅读笔记区段：行卡纵向堆叠 ---------- */
 .jrs-page > .jrs-paper-row { padding: 13px 16px; }
 
-@media (max-width: 720px) {
+@container (max-width: 720px) {
   .jrs-sidebar { display: none; }
   .jrs-paper-row { flex-direction: column; align-items: stretch; }
 }

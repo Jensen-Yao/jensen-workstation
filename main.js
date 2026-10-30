@@ -227,7 +227,7 @@ class PomoEngine {
       this.total = (long ? s.pomoLongBreak : s.pomoBreak) * 60;
       this.left = this.total; this._run();
     } else {
-      new Notice('☕ 休息结束，继续冲刺！');
+      new Notice(' 休息结束，继续冲刺！');
       this.phase = 'idle'; this.left = 0; this.total = 0;
     }
     this.emit();
@@ -324,7 +324,7 @@ class SidePanelView extends ItemView {
       if (r.xr) row.appendChild(badge(`新锐${r.xr}`, 'cn'));
       if (r.ccf) row.appendChild(badge(`CCF-${r.ccf.grade}`, 'top'));
       if (r.cast) row.appendChild(badge(`科协${r.cast}`, r.cast === 'A' || r.cast === 'T1' ? 'top' : 'mid'));
-      if (r.warn) row.appendChild(badge(`⚠️${r.warn}`, 'top'));
+      if (r.warn) row.appendChild(badge(`${r.warn}`, 'top'));
       if (!row.children.length) row.appendChild(badge('已收录', 'mid'));
     };
     jInput.oninput = () => { if (deb) clearTimeout(deb); deb = setTimeout(runQ, 250); };
@@ -345,7 +345,7 @@ class SidePanelView extends ItemView {
       await this.plugin.captureThought(v);
       cInput.value = '';
       cHint.textContent = `${window.moment().format('HH:mm')} 已存`;
-      new Notice('已存入今日收件箱 📥');
+      new Notice('已存入今日收件箱 ');
     };
     const inbox = this.plugin.findDailyNote ? null : null;
     const openInbox = cCard.createEl('button', { cls: 'od-btn od-btn--sm od-btn--ghost', text: '查看收件箱' });
@@ -712,7 +712,10 @@ class DashboardView extends ItemView {
     if (this._ro) this._ro.disconnect();
     this._ro = new ResizeObserver(() => { this.computeMetrics(); this.applyPositions(); });
     this._ro.observe(this._board);
-    this.registerEvent(this.app.workspace.on('resize', () => { this.computeMetrics(); this.applyPositions(); }));
+    /* resize 监听只注册一次（防泄漏：旧句柄先卸） */
+    if (this._wsResizeRef) this.app.workspace.offref(this._wsResizeRef);
+    this._wsResizeRef = this.app.workspace.on('resize', () => { this.computeMetrics(); this.applyPositions(); });
+    this.registerEvent(this._wsResizeRef);
   }
 
   async buildShell(def) {
@@ -1024,7 +1027,7 @@ class DashboardView extends ItemView {
       main.createEl('div', { cls: 'od-hint', text: `${it.date} · ${it.authors}` });
       const add = row.createEl('button', { cls: 'od-icon-btn', title: '加入文献库' });
       setIcon(add, 'plus');
-      add.onclick = async () => { await this.plugin.arxivToLibrary(it); new Notice('已加入文献库 📚'); };
+      add.onclick = async () => { await this.plugin.arxivToLibrary(it); new Notice('已加入文献库 '); };
     });
     return body;
   }
@@ -1231,7 +1234,7 @@ class DashboardView extends ItemView {
           try {
             if (it.source === 'crossref') await this.plugin.crossrefToLibrary(it);
             else await this.plugin.arxivToLibrary(it);
-            new Notice('已加入文献库 📚');
+            new Notice('已加入文献库 ');
             add.textContent = '已入库';
           } catch (e) { new Notice(`入库失败：${e.message}`); add.disabled = false; }
         };
@@ -1440,7 +1443,7 @@ class DashboardView extends ItemView {
           new Notice(`正在为「${sec.name}」起草初稿…`);
           try {
             await this.plugin.aiDraftSection(sec.name);
-            new Notice(`「${sec.name}」初稿已写入大纲 ✨`);
+            new Notice(`「${sec.name}」初稿已写入大纲 sparkles`);
             this.render();
           } catch (e) {
             new Notice(`起草失败：${e.message}`);
@@ -1477,7 +1480,7 @@ class DashboardView extends ItemView {
       const main = item.createEl('div', { cls: 'jrs-row-main' });
       const t = main.createEl('div', { cls: 'jrs-row-title', text: q.question });
       t.onclick = () => this.plugin.smartOpenFile(q.file);
-      main.createEl('div', { cls: 'od-hint', text: `${q.status === 'answered' ? '已解答' : '❓ 待解答'} · ${window.moment(q.added).format('M月D日')}` });
+      main.createEl('div', { cls: 'od-hint', text: `${q.status === 'answered' ? '已解答' : ' 待解答'} · ${window.moment(q.added).format('M月D日')}` });
       const st = item.createEl('button', { cls: `od-btn od-btn--sm${q.status === 'answered' ? '' : ' od-btn--primary'}` });
       st.textContent = q.status === 'answered' ? '重新打开' : '标记已解答';
       st.onclick = async () => { await this.plugin.toggleQuestion(q); this.render(); };
@@ -1671,7 +1674,7 @@ class DashboardView extends ItemView {
         const names = item.sources.map((s) => (s.file ? s.file.basename : s.basename)).filter(Boolean);
         await this.plugin.createQuestion(item.q, names.join(','));
         await this.plugin.appendAnswerToQuestion(item.q, item.a);
-        new Notice('已沉淀到研究问题 ✅');
+        new Notice('已沉淀到研究问题 ');
       };
     };
 
@@ -1715,7 +1718,8 @@ class DashboardView extends ItemView {
 
     /* 空态：示例问题 chips（点击即填入提问） */
     const _hist = await this.plugin.getAskLogToday();
-    if (!_hist.length) {
+    const _hasHistory = _hist.length > 0;
+    if (!_hasHistory) {
       const sug = card.createEl('div', { cls: 'jrs-ask-suggest' });
       sug.createEl('div', { cls: 'od-hint', text: '试试这些问题：' });
       const chips = sug.createEl('div', { cls: 'od-chips' });
@@ -1987,7 +1991,7 @@ class AddPaperModal extends Modal {
         if (!v) { venueHint.textContent = ''; return; }
         const r = await this.plugin.lookupJournal(v);
         venueHint.textContent = r.found
-          ? [r.cas ? `中科院${r.cas}${r.casTop ? '·Top' : ''}` : '', r.xr ? `新锐${r.xr}` : '', r.ccf ? `CCF-${r.ccf.grade}` : '', r.cast ? `科协${r.cast}` : '', r.warn ? `⚠️${r.warn}` : ''].filter(Boolean).join(' · ')
+          ? [r.cas ? `中科院${r.cas}${r.casTop ? '·Top' : ''}` : '', r.xr ? `新锐${r.xr}` : '', r.ccf ? `CCF-${r.ccf.grade}` : '', r.cast ? `科协${r.cast}` : '', r.warn ? `${r.warn}` : ''].filter(Boolean).join(' · ')
           : '（未收录，可照常保存）';
       }, 250);
     };
@@ -2267,7 +2271,7 @@ class AiSynthesisModal extends Modal {
       busy.textContent = '正在阅读文献并综合…（关闭弹窗可取消打开）';
       try {
         const f = await this.plugin.aiSynthesis(topic, n, goal);
-        if (this._cancelled) return;
+        if (this._cancelled) { new Notice('综述已生成但未打开（弹窗已关闭）'); return; }
         busy.textContent = `已生成：${f.path}`;
         this.plugin.smartOpenFile(f);
       } catch (e) { if (!this._cancelled) { busy.textContent = `${e.message}`; new Notice(`综述失败：${e.message}`); } }
@@ -2296,7 +2300,7 @@ class CaptureModal extends Modal {
       .addButton((b) => b.setButtonText('存入收件箱').setCta().onClick(async () => {
         if (!text.trim()) { new Notice('内容为空'); return; }
         await this.plugin.captureThought(text.trim());
-        new Notice('已存入今日收件箱 📥');
+        new Notice('已存入今日收件箱 ');
         this.close();
       }))
       .addButton((b) => b.setButtonText('取消').onClick(() => this.close()));
@@ -2341,7 +2345,7 @@ class AddSubmissionModal extends Modal {
       .addButton((b) => b.setButtonText('创建').setCta().onClick(async () => {
         if (!title.trim()) { new Notice('标题不能为空'); return; }
         await this.plugin.createSubmission(title.trim(), custom || target, deadline, note.trim());
-        new Notice(`投稿已建档：${(custom || target)} 🎯`);
+        new Notice(`投稿已建档：${(custom || target)} `);
         this.close();
         if (this.onDone) this.onDone();
       }))
@@ -2371,7 +2375,7 @@ class AddQuestionModal extends Modal {
       .addButton((b) => b.setButtonText('创建').setCta().onClick(async () => {
         if (!q.trim()) { new Notice('问题描述不能为空'); return; }
         await this.plugin.createQuestion(q.trim(), related);
-        new Notice('研究问题已记录 ❓');
+        new Notice('研究问题已记录 ');
         this.close();
         if (this.onDone) this.onDone();
       }))
@@ -2949,7 +2953,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '---',
       '',
     ].join('\n');
-    const pdfLink = pdfVal && !isHttp(pdfVal) && !isExternalPath(pdfVal) ? `\n📎 原文：[[${pdfVal.split('/').pop()}]]\n` : '';
+    const pdfLink = pdfVal && !isHttp(pdfVal) && !isExternalPath(pdfVal) ? `\n原文:  原文：[[${pdfVal.split('/').pop()}]]\n` : '';
     const body = [
       `# ${data.title}`, '', pdfLink.trim(),
       '## 一句话总结', '', '## 问题设定（卫星/目标/约束）', '',
@@ -3070,7 +3074,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         await this.app.fileManager.processFrontMatter(p.file, (fm) => { fm.pdf = rel; });
         const content = await this.app.vault.cachedRead(p.file);
         if (!content.includes(`[[${base}]]`)) {
-          await this.app.vault.modify(p.file, content.replace(/^# .+\n/, (m) => `${m}\n📎 原文：[[${base}]]\n`));
+          await this.app.vault.modify(p.file, content.replace(/^# .+\n/, (m) => `${m}\n原文:  原文：[[${base}]]\n`));
         }
         ok += 1;
       } catch (e) { fail += 1; console.error('[JRS] PDF 迁移失败', p.pdf, e); }
@@ -3206,7 +3210,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     const out = await this.aiChat(
       '你是严谨的科研助理。根据文献笔记生成四个部分的简明中文要点。只输出 markdown 正文。',
       `文献笔记：\n${source}\n\n请输出（使用这些确切标题）：\n## 一句话总结\n## 问题设定（卫星/目标/约束）\n## 求解算法\n## 可借鉴点`,
-    );
+ );
     const content = await this.app.vault.cachedRead(paper.file);
     let c = content;
     ['一句话总结', '问题设定（卫星/目标/约束）', '求解算法', '可借鉴点'].forEach((h) => {
@@ -3214,7 +3218,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       if (m && m[1].trim()) c = replaceSection(c, h, m[1].trim());
     });
     await this.app.vault.modify(paper.file, c);
-    new Notice('AI 摘要已写入 ✨');
+    new Notice('AI 摘要已写入 sparkles');
     await this.smartOpenFile(paper.file);
   }
 
@@ -3224,11 +3228,11 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '你是导师，为研究生生成论文导读问题。只输出 markdown 正文。',
       `文献：\n${source}\n\n生成 10 个帮助深入理解该论文的问题，每题附 2-3 句参考答案。格式：\n## 导读十问\n1. **问题**\n   - 参考：…`,
       1400,
-    );
+ );
     const content = await this.app.vault.cachedRead(paper.file);
     const m = out.match(/## 导读十问[\s\S]*/);
     await this.app.vault.modify(paper.file, replaceSection(content, '导读十问', (m ? m[0] : out).replace(/^## 导读十问\s*\n/, '')));
-    new Notice('导读十问已生成 ❓');
+    new Notice('导读十问已生成 ');
     await this.smartOpenFile(paper.file);
   }
 
@@ -3239,7 +3243,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '从文献信息推断元数据，只输出 JSON。',
       `标题与内容：\n${paper.title}\n${body}\n\n输出 JSON：{"authors":"第一作者等","year":"2024","venue":"期刊/会议","priority":"高|中|低","topics":["从候选中选：${this.settings.topics.join('/')}"],"summary":"一句话中文总结"}`,
       500,
-    );
+ );
     let m;
     try { m = JSON.parse(out.replace(/```json|```/g, '').trim()); } catch (e) { throw new Error('模型输出无法解析为 JSON'); }
     await this.app.fileManager.processFrontMatter(paper.file, (fm) => {
@@ -3271,7 +3275,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '你是撰写文献综述的科研助理。基于给定文献输出结构化中文综述（markdown），结论标注来源编号。',
       `主题：${topic}\n研究目标：${goal || '围绕主题展开'}\n文献列表：\n${digest}\n\n输出结构：\n## 当前结论\n## 共同认识\n## 分歧与对比\n## 方法比较（表格）\n## 研究空白\n## 下一步建议`,
       2000,
-    );
+ );
     const dir = this.settings.surveyNote.split('/').slice(0, -1).join('/') || '';
     const path = `${dir ? dir + '/' : ''}AI 综述 - ${topic} ${todayKey()}.md`;
     const content = [
@@ -3325,7 +3329,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     let text = fs.readFileSync(md, 'utf-8');
     if (text.length > 60000) text = `${text.slice(0, 60000)}\n\n…（过长已截断）`;
     await this.app.vault.modify(paper.file, replaceSection(content, '原文提取（MinerU）', text));
-    new Notice('MinerU 解析已写入 ✅');
+    new Notice('MinerU 解析已写入 ');
   }
 
   /* ---------- 研究问题 ---------- */
@@ -3414,7 +3418,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '你是严谨的科研助理。只依据给定文献回答，关键结论后用 [n] 标注来源编号；文献不足以回答时明确说明。用中文，输出 markdown 要点。',
       `问题：${question}\n\n文献：\n${ctx}\n\n输出：直接给答案（可分点），关键处标注 [n]。`,
       1200,
-    );
+ );
     return { q: question, a: out, sources: picked };
   }
 
@@ -3468,7 +3472,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '你是运筹学/航天领域的综述写作助理。依据给定文献起草综述章节初稿：中文、学术书面语、2-3 个自然段，关键论断后标注 [n] 来源编号；不要杜撰文献中不存在的内容。只输出 markdown 正文。',
       `章节标题：${sectionName}\n该章节已有写作要点：\n${bullets || '（暂无）'}\n\n相关文献：\n${ctx}\n\n请起草该章节初稿。`,
       1600,
-    );
+ );
 
     const startMark = `<!--jrs-draft:${sectionName}-->`;
     const srcLinks = picked.map((p, i) => `[[${p.file.basename}|${i + 1}]]`).join(' ');
@@ -3712,7 +3716,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
         `你是运筹学/航天领域的学术写作助手。任务：${spec[0]}。要求：${spec[1]} 不要任何解释、前后缀或代码块。`,
         sel.slice(0, 3000),
         1600,
-      );
+ );
       const clean = out.trim().replace(/^```[a-z]*\n?|```$/g, '');
       if (!clean) throw new Error('模型返回为空');
       editor.replaceSelection(clean);
@@ -3756,7 +3760,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     }
     const content = await this.app.vault.cachedRead(f);
     await this.app.vault.modify(f, replaceSection(content, '今日小结', lines.join('\n')));
-    new Notice('今日小结已写入日记 ✅');
+    new Notice('今日小结已写入日记 ');
     await this.smartOpenFile(f);
   }
 
@@ -3815,7 +3819,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
       '',
       `# ${title}`,
       '',
-      `🎯 目标期刊：**${target}**${j ? `（${j.name}，${j.tag}）` : ''}`,
+      ` 目标期刊：**${target}**${j ? `（${j.name}，${j.tag}）` : ''}`,
       '',
       j ? `> 匹配点：${j.match}。${j.note}。${j.link ? `投稿入口：${j.link}` : ''}` : '',
       '',
@@ -3914,11 +3918,25 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
 
   /* ---------- Bases ---------- */
 
+  /** 异步确认弹窗（替代 window.confirm 原生阻塞） */
+  confirmDialog(title, message) {
+    return new Promise((resolve) => {
+      const m = new Modal(this.app);
+      m.titleEl.setText(title);
+      m.contentEl.createEl('p', { text: message });
+      new Setting(m.contentEl)
+        .addButton((b) => b.setButtonText('确认').setCta().onClick(() => { m.close(); resolve(true); }))
+        .addButton((b) => b.setButtonText('取消').onClick(() => { m.close(); resolve(false); }));
+      m.onClose = () => resolve(false);
+      m.open();
+    });
+  }
+
   async generateBases() {
     const dir = this.settings.basesFolder;
     const existing = ['文献库', '阅读队列'].filter((n) => this.app.vault.getAbstractFileByPath(`${dir}/${n}.base`));
     if (existing.length) {
-      const ok = window.confirm(`将覆盖 ${existing.join('、')} 的 Bases 配置（手工修改会丢失）。继续？`);
+      const ok = await this.confirmDialog('重建 Bases', `将覆盖 ${existing.join('、')} 的 Bases 配置（手工修改会丢失）。`);
       if (!ok) { new Notice('已取消'); return; }
     }
     await this.ensureFolder(dir);
@@ -3963,7 +3981,7 @@ module.exports = class JensenResearchStationPlugin extends Plugin {
     ].join('\n');
     await this.ensureFolder(this.settings.surveyNote.split('/').slice(0, -1).join('/'));
     const f = await this.app.vault.create(this.settings.surveyNote, outline);
-    new Notice('综述大纲已初始化 ✅');
+    new Notice('综述大纲已初始化 ');
     if (open) await this.smartOpenFile(f);
   }
 
