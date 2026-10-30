@@ -1337,7 +1337,7 @@ class DashboardView extends ItemView {
     desc.textContent = '生成 Obsidian Canvas：主题节点居中、论文节点按方向环绕，连线表示归属关系。可在画布中自由拖拽编辑。';
     const acts = intro.createEl('div', { cls: 'jrs-row-actions' });
     const exists = !!this.app.vault.getAbstractFileByPath(this.plugin.settings.graphCanvas);
-    /* 真实图谱缩略预览：读 canvas JSON → SVG */
+    /* 真实图谱缩略预览：读 canvas JSON → SVG（带主题标签 + 可见连线） */
     if (exists) {
       const thumb = intro.createEl('div', { cls: 'jrs-graph-thumb' });
       try {
@@ -1355,24 +1355,34 @@ class DashboardView extends ItemView {
           const sy = (y) => ((y - minY) / (maxY - minY)) * H;
           const nodeById = Object.fromEntries(nodes.map((nd) => [nd.id, nd]));
           let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+          /* 连线：加粗加色使其可见 */
           edges.forEach((e) => {
             const a = nodeById[e.fromNode]; const b = nodeById[e.toNode];
             if (!a || !b) return;
-            svg += `<line x1="${sx(a.x + 130)}" y1="${sy(a.y + 30)}" x2="${sx(b.x + 140)}" y2="${sy(b.y + 40)}" stroke="rgba(124,140,180,.28)" stroke-width="1"/>`;
+            svg += `<line x1="${sx(a.x + 130)}" y1="${sy(a.y + 30)}" x2="${sx(b.x + 140)}" y2="${sy(b.y + 40)}" stroke="rgba(76,125,239,.25)" stroke-width="1.5"/>`;
           });
           nodes.forEach((nd) => {
             const isTopic = String(nd.id).startsWith('topic-');
             const cx = sx(nd.x + (nd.width || 260) / 2); const cy = sy(nd.y + (nd.height || 60) / 2);
             if (isTopic) {
-              svg += `<rect x="${sx(nd.x)}" y="${sy(nd.y)}" width="${Math.max(40, (nd.width || 260) / (maxX - minX) * W)}" height="${Math.max(16, (nd.height || 60) / (maxY - minY) * H)}" rx="6" fill="rgba(76,125,239,.85)"/>`;
+              const rw = Math.max(50, (nd.width || 260) / (maxX - minX) * W);
+              const rh = Math.max(18, (nd.height || 60) / (maxY - minY) * H);
+              svg += `<rect x="${sx(nd.x)}" y="${sy(nd.y)}" width="${rw}" height="${rh}" rx="4" fill="rgba(76,125,239,.88)"/>`;
+              /* 主题标签 */
+              const label = (nd.text || '').replace(/^##\s*/, '').trim().slice(0, 8);
+              if (label) {
+                const fs = Math.max(9, Math.min(12, rw / label.length));
+                svg += `<text x="${sx(nd.x) + rw / 2}" y="${sy(nd.y) + rh / 2 + fs * 0.35}" text-anchor="middle" font-size="${fs}" fill="#fff" font-weight="600">${label}</text>`;
+              }
             } else {
-              svg += `<circle cx="${cx}" cy="${cy}" r="4.5" fill="rgba(120,140,180,.9)"/>`;
+              svg += `<circle cx="${cx}" cy="${cy}" r="3.5" fill="rgba(100,120,160,.8)" stroke="rgba(76,125,239,.4)" stroke-width="0.5"/>`;
             }
           });
           svg += '</svg>';
           thumb.innerHTML = svg;
           const cap = intro.createEl('div', { cls: 'od-hint' });
-          cap.textContent = `缩略预览：${okNodes.filter((nd) => String(nd.id).startsWith('topic-')).length} 主题节点 · ${okNodes.length} 节点 · ${edges.length} 连线（打开图谱可拖拽编辑）`;
+          const topics = okNodes.filter((nd) => String(nd.id).startsWith('topic-')).length;
+          cap.textContent = `${topics} 个研究方向 · ${okNodes.length} 节点 · ${edges.length} 连线（蓝色=主题，灰点=论文，打开图谱可编辑）`;
         }
       } catch (e) {
         thumb.createEl('div', { cls: 'od-hint', text: `图谱文件解析失败：${e.message}` });
